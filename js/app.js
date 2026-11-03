@@ -1,7 +1,7 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=780fd62';
-import * as C from './crypto.js?v=780fd62';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=780fd62';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.1.1';
+import * as C from './crypto.js?v=0.1.1';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.1.1';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -49,11 +49,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=780fd62');
+      const { createDemoStore } = await import('./store-demo.js?v=0.1.1');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=780fd62');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.1.1');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -61,7 +61,24 @@ export async function start() {
     return;
   }
   state.store.onAuth(onAuthChange);
+  checkNewVersion();
+  setInterval(checkNewVersion, 10 * 60000);
   ['mousemove', 'keydown', 'click', 'touchstart'].forEach((ev) => document.addEventListener(ev, resetIdle, { passive: true }));
+}
+
+async function checkNewVersion() {
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const { version } = await r.json();
+    if (!version || version === APP_VERSION || document.getElementById('new-version')) return;
+    const bar = document.createElement('div');
+    bar.id = 'new-version';
+    bar.className = 'new-version';
+    bar.innerHTML = `Je k dispozici nová verze ARTURa ${esc(version)}. <button class="small primary">Načíst znovu</button>`;
+    bar.querySelector('button').onclick = () => { location.href = location.pathname + '?v=' + encodeURIComponent(version); };
+    document.body.prepend(bar);
+  } catch { /* offline – nevadí */ }
 }
 
 function resetIdle() {

@@ -17,7 +17,7 @@ ARTUR je webová aplikace bez vlastního serveru:
 - Udělení přístupu členům. Vlastník při něm vidí otisk klíče člena.
 - Záchranný klíč subjektu: stažení, tisk, potvrzení opsáním dvou skupin znaků, obnova přístupu.
 - Údaje subjektu: načtení z ARES, bankovní účty s výpočtem IBAN a kontrolou čísla účtu, číselná řada, splatnost, příznak exportu do Money S3.
-- Historie změn (audit), šifrovaná záloha ve formátu JSON, zamčení po 30 minutách nečinnosti, změna hesla.
+- Historie změn (audit), šifrovaná záloha ve formátu JSON, zamčení po 60 minutách nečinnosti, změna hesla.
 
 ## Demo bez Firebase
 

@@ -102,6 +102,8 @@ table.grid { border-collapse: collapse; width: 100%; background: var(--panel); b
 .toast { position: fixed; right: 20px; bottom: 20px; padding: 10px 16px; border-radius: 6px; background: var(--ok-soft); color: var(--ok); border: 1px solid var(--ok); z-index: 10; max-width: 420px; }
 .toast.err { background: var(--err-soft); color: var(--err); border-color: var(--err); }
 .foot { text-align: center; color: var(--muted); font-size: 12px; padding: 10px; }
+.new-version { background: var(--accent-soft); color: var(--accent); text-align: center; padding: 6px; font-size: 14px; }
+.new-version button { margin-left: 10px; }
 .demo-banner { display: none; background: var(--warn-soft); color: var(--warn); text-align: center; font-size: 13px; padding: 4px; font-weight: 600; }
 body.demo .demo-banner { display: block; }
 
