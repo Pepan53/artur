@@ -1,11 +1,12 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.3';
-import * as C from './crypto.js?v=0.5.3';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.3';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.3';
-import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.3';
-import { viewBanka } from './views-banka.js?v=0.5.3';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.3';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.4';
+import { currentTheme, toggleTheme } from './theme.js?v=0.5.4';
+import * as C from './crypto.js?v=0.5.4';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.4';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.4';
+import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.4';
+import { viewBanka } from './views-banka.js?v=0.5.4';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.4';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -61,11 +62,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.5.3');
+      const { createDemoStore } = await import('./store-demo.js?v=0.5.4');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.3');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.4');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -327,6 +328,7 @@ function renderMain(root) {
     <div class="who">${esc(state.auth.email)}${isAdmin() ? ' <span class="tag">admin</span>' : ''} ${s && myRole(s) ? `<span class="tag">${ROLE_LABEL[myRole(s)]}</span>` : ''}</div>
     <button id="btn-lock" title="Zamknout">Zamknout</button>
     <button id="btn-out">Odhlásit</button>
+    <button id="btn-theme" class="theme-toggle" title="${currentTheme() === 'dark' ? 'Přepnout na světlý režim' : 'Přepnout na tmavý režim'}" aria-label="Světlý / tmavý režim">${currentTheme() === 'dark' ? '☀️' : '🌙'}</button>
   </header>
   <div class="layout">
     <nav class="side">${navHtml}</nav>
@@ -335,6 +337,7 @@ function renderMain(root) {
   root.querySelector('#sel-subject').onchange = (e) => { state.current = e.target.value; render(); };
   root.querySelector('#btn-lock').onclick = () => lock('Aplikace je zamčená.');
   root.querySelector('#btn-out').onclick = () => state.store.signOut();
+  root.querySelector('#btn-theme').onclick = () => { toggleTheme(); render(); };
   root.querySelectorAll('nav.side button[data-view]').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; state.detailId = null; render(); }));
   root.querySelector('#nav-nastaveni').onclick = () => { state.navNastaveni = !state.navNastaveni; render(); };
   const main = root.querySelector('#main');
