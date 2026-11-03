@@ -1,0 +1,91 @@
+rules_version = '2';
+
+// ARTUR – pravidla přístupu k Firestore.
+// Vložte do Firebase konzole: Firestore Database → Rules → Publish.
+// Data subjektů jsou šifrovaná v prohlížeči; pravidla navíc hlídají, kdo smí co číst a zapisovat.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function me() {
+      return request.auth.token.email.lower();
+    }
+    function isAdmin() {
+      return signedIn() && me() in ['josef.dvorak@postme.cz'];
+    }
+    function allowed() {
+      return isAdmin() || (signedIn() && exists(/databases/$(database)/documents/allowed/$(me())));
+    }
+    function subj(sid) {
+      return get(/databases/$(database)/documents/subjects/$(sid)).data;
+    }
+    function isMember(sid) {
+      return allowed() && me() in subj(sid).memberEmails;
+    }
+    function roleIn(sid) {
+      return subj(sid).members[me()];
+    }
+    function isOwner(sid) {
+      return isMember(sid) && roleIn(sid) == 'vlastnik';
+    }
+    function canWrite(sid) {
+      return isMember(sid) && roleIn(sid) in ['vlastnik', 'ucetni'];
+    }
+    function membersConsistent(d) {
+      return d.members is map
+        && d.memberEmails is list
+        && d.members.keys().hasAll(d.memberEmails)
+        && d.memberEmails.hasAll(d.members.keys())
+        && d.members.values().hasOnly(['vlastnik', 'ucetni', 'ctenar'])
+        && 'vlastnik' in d.members.values();
+    }
+
+    // Seznam e-mailů, které se smí přihlásit. Spravuje jen administrátor.
+    match /allowed/{email} {
+      allow get: if signedIn() && (email == me() || isAdmin());
+      allow list, write: if isAdmin();
+    }
+
+    // Profil uživatele: veřejný klíč a soukromý klíč zašifrovaný jeho heslem.
+    match /users/{email} {
+      allow read: if allowed();
+      allow create, update: if allowed() && email == me();
+      allow delete: if false;
+    }
+
+    match /subjects/{sid} {
+      allow read: if allowed() && me() in resource.data.memberEmails;
+      allow create: if isAdmin()
+        && request.resource.data.status == 'novy'
+        && !('enc' in request.resource.data)
+        && membersConsistent(request.resource.data);
+      allow update: if allowed()
+        && resource.data.members[me()] == 'vlastnik'
+        && membersConsistent(request.resource.data);
+      allow delete: if false;
+
+      // Klíč subjektu zabalený veřejným klíčem člena.
+      match /keys/{email} {
+        allow read: if isMember(sid) && (email == me() || roleIn(sid) == 'vlastnik');
+        allow write: if isOwner(sid) && email in subj(sid).memberEmails;
+      }
+
+      // Šifrované dokumenty (zákazníci, faktury, ... – další etapy).
+      match /docs/{docId} {
+        allow read: if isMember(sid);
+        allow create, update: if canWrite(sid);
+        allow delete: if false;
+      }
+
+      // Auditní záznam – jen přidávat.
+      match /audit/{id} {
+        allow read: if isMember(sid);
+        allow create: if isMember(sid) && request.resource.data.by == me();
+        allow update, delete: if false;
+      }
+    }
+  }
+}
