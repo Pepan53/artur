@@ -160,3 +160,4 @@ body.demo .demo-banner { display: block; }
 .hist { padding-left: 18px; color: var(--ink); }
 .hist li { margin: 3px 0; }
 .grid td.num, .grid th.num { white-space: nowrap; }
+option.shoda { font-weight: 600; }

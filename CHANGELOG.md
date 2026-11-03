@@ -3,6 +3,10 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.5.5 (2026-11-03)
+- Banka a úhrady: tlačítko „Znovu spárovat“ projde dosud nespárované příjmy proti aktuálním fakturám (např. po doplnění faktur importem).
+- Oprava: zvýraznění faktur se shodnou částkou v ručním přiřazení (blokovala ho bezpečnostní politika stránky).
+
 ## 0.5.4 (2026-11-03)
 - Přepínač světlého a tmavého režimu v pravém horním rohu (volba se pamatuje v prohlížeči; bez volby se řídí nastavením systému).
 

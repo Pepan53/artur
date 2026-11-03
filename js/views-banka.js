@@ -1,8 +1,8 @@
 // ARTUR – etapa 4: výpisy z banky (GPC) a párování úhrad.
-import * as C from './crypto.js?v=0.5.4';
-import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.4';
-import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.4';
-import { esc, loadDocs, canWrite, saveZak } from './views-fakturace.js?v=0.5.4';
+import * as C from './crypto.js?v=0.5.5';
+import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.5';
+import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.5';
+import { esc, loadDocs, canWrite, saveZak } from './views-fakturace.js?v=0.5.5';
 
 const ucetBezBanky = (c) => String(c || '').split('/')[0].replace(/^0+/, '');
 
@@ -60,9 +60,10 @@ export async function viewBanka(main, ctx) {
         <td>${rw ? `<button class="small primary" data-ok="${esc(t.id)}">Potvrdit</button> <button class="small" data-no="${esc(t.id)}">Odmítnout</button>` : ''}</td></tr>`; }).join('')}
       </tbody></table></section>` : ''}
     <section class="box"><h2>Nespárované příjmy (${nesp.length})</h2>
+      ${rw && nesp.length ? '<p class="row"><button id="btn-znovu">Znovu spárovat</button> <span class="muted small">Projde nespárované příjmy proti aktuálním fakturám – např. po doplnění faktur importem.</span></p>' : ''}
       ${nesp.length ? `<table class="grid"><thead><tr><th>Datum</th><th class="num">Částka</th><th>VS</th><th>Protiúčet / zpráva</th><th>Přiřadit</th></tr></thead><tbody>
       ${nesp.map((t) => `<tr><td>${datum(t.datum)}</td><td class="num">${czk(t.castka)}</td><td>${esc(t.vs)}</td><td class="small">${esc(t.protiucet)}<br>${esc((t.zprava || t.text || '').slice(0, 60))}</td>
-        <td>${rw ? `<div class="row"><select data-sel="${esc(t.id)}"><option value="">— faktura —</option>${otevrene.map((f) => `<option value="${esc(f.id)}" ${Math.abs(round2(f.celkem - uhrazeno(f)) - t.castka) < 0.005 ? 'style="font-weight:600"' : ''}>${esc(f.cislo)} · ${esc((f.odberatel?.nazev || '').slice(0, 30))} · zbývá ${czk(round2(f.celkem - uhrazeno(f)))}</option>`).join('')}</select>
+        <td>${rw ? `<div class="row"><select data-sel="${esc(t.id)}"><option value="">— faktura —</option>${otevrene.map((f) => `<option value="${esc(f.id)}" ${Math.abs(round2(f.celkem - uhrazeno(f)) - t.castka) < 0.005 ? 'class="shoda"' : ''}>${esc(f.cislo)} · ${esc((f.odberatel?.nazev || '').slice(0, 30))} · zbývá ${czk(round2(f.celkem - uhrazeno(f)))}</option>`).join('')}</select>
           <button class="small primary" data-assign="${esc(t.id)}">Přiřadit</button><button class="small" data-ign="${esc(t.id)}">Není úhrada faktury</button></div>` : ''}</td></tr>`).join('')}
       </tbody></table>` : '<p>Všechny příjmy jsou spárované nebo označené.</p>'}
     </section>
@@ -128,6 +129,33 @@ export async function viewBanka(main, ctx) {
       ctx.flash(`Výpisy uloženy. Spárováno ${r.auto.length} úhrad, ke kontrole ${r.navrhy.length}, nespárovaných příjmů ${r.nesparovane.length}.`);
       ctx.render();
     };
+  };
+
+  // --- znovu spárovat dosud nespárované příjmy
+  const bz = main.querySelector('#btn-znovu');
+  if (bz) bz.onclick = async () => {
+    bz.disabled = true; bz.textContent = 'Páruji…';
+    const me = ctx.state.auth.email;
+    const r = sparuj(nesp.map((t) => ({ ...t, storno: false, smer: 'prijem' })), s.faktury, s.zakaznici);
+    const pol = []; const zmenene = new Map();
+    for (const a of r.auto) {
+      const t = nesp.find((x) => x.id === a.p.id);
+      pripisUhradu(a.f, t, me); zmenene.set(a.f.id, a.f);
+      pol.push({ id: t.id, t: 'bank', obj: { ...t, stav: 'sparovano', fakturaId: a.f.id } });
+    }
+    for (const n of r.navrhy) {
+      const t = nesp.find((x) => x.id === n.p.id);
+      pol.push({ id: t.id, t: 'bank', obj: { ...t, stav: 'navrh', fakturaId: n.f.id, duvod: n.duvod } });
+    }
+    for (const f of zmenene.values()) pol.push({ id: f.id, t: 'fa', obj: f });
+    if (pol.length) {
+      try { await ulozit(ctx, s, pol); } catch (err) { bz.disabled = false; bz.textContent = 'Znovu spárovat'; return ctx.toast('Uložení selhalo: ' + err.message, 'err'); }
+      for (const a of r.auto) await naucUcet(ctx, s, a.f, a.p);
+      await ctx.audit(s.id, 'banka.parovani', `znovu spárováno: ${r.auto.length} úhrad, ke kontrole ${r.navrhy.length}, zbývá ${r.nesparovane.length}`);
+      await loadDocs(ctx, s, true);
+    }
+    ctx.flash(`Znovu spárováno: ${r.auto.length} úhrad, ke kontrole ${r.navrhy.length}, stále nespárovaných ${r.nesparovane.length}.`);
+    ctx.render();
   };
 
   // --- potvrzení / odmítnutí / ruční přiřazení / ignorování
