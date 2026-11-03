@@ -4,10 +4,10 @@
 // 2) Administrátor musí být stejný i v souboru firestore.rules.
 
 export const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  appId: '',
+  apiKey: 'AIzaSyCVbxdJPr4zVHjKZkyuyPPH5G7fSodIDFc',
+  authDomain: 'artur-postme.firebaseapp.com',
+  projectId: 'artur-postme',
+  appId: '1:559474197740:web:956e481f37c69389f411c9',
 };
 
 export const ADMIN_EMAILS = ['josef.dvorak@postme.cz'];
