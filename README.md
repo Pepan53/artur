@@ -62,6 +62,12 @@ Ve Firebase otevřete **Authentication → Settings → Authorized domains → A
 6. **Nový subjekt** – KAROLÍNA DVOŘÁKOVÁ: jediný člen je Karolína jako vlastník. Vy k němu přístup mít nebudete. Dokončí ho Karolína po svém přihlášení a záchranný klíč si uloží ona.
 7. Karolína a Štěpán se přihlásí a nastaví si šifrovací heslo. Pak jim v POSTME v sekci **Členové a přístup** klikněte na **Udělit přístup**.
 
+## Aktuální nasazení
+
+- Aplikace: https://pepan53.github.io/artur/ (repozitář Pepan53/artur, větev main)
+- Firebase: projekt `artur-postme` (účet fakturace@postme.cz), Firestore v `eur3`
+- Klíč API je v Google Cloudu omezen na `https://pepan53.github.io/*` a `https://artur-postme.firebaseapp.com/*`. Pokud se změní adresa aplikace, je potřeba omezení upravit (APIs & Services → Credentials).
+
 ## Jak funguje ochrana dat
 
 | Co je v cloudu | V jaké podobě |
