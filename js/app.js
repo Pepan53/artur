@@ -1,7 +1,7 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js';
-import * as C from './crypto.js';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=780fd62';
+import * as C from './crypto.js?v=780fd62';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=780fd62';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -49,11 +49,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js');
+      const { createDemoStore } = await import('./store-demo.js?v=780fd62');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=780fd62');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
