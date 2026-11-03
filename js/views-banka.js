@@ -1,8 +1,8 @@
 // ARTUR – etapa 4: výpisy z banky (GPC) a párování úhrad.
-import * as C from './crypto.js?v=0.5.1';
-import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.1';
-import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.1';
-import { esc, loadDocs, canWrite, saveZak } from './views-fakturace.js?v=0.5.1';
+import * as C from './crypto.js?v=0.5.2';
+import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.2';
+import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.2';
+import { esc, loadDocs, canWrite, saveZak } from './views-fakturace.js?v=0.5.2';
 
 const ucetBezBanky = (c) => String(c || '').split('/')[0].replace(/^0+/, '');
 
