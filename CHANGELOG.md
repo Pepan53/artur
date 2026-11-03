@@ -3,6 +3,16 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.4.0 (2026-11-03)
+- Etapa 3: opakované faktury – šablony (měsíčně / čtvrtletně / ročně, den vystavení, fakturace za aktuální nebo předchozí měsíc, platnost od–do).
+- Proměnné v položkách: {mesic}, {v_mesici}, {rok}, {mm}, {obdobi}, {ctvrtleti}.
+- Návrh šablon z posledních faktur (měsíc v textu se sám nahradí proměnnou).
+- Měsíční fakturace: koncepty ze šablon → kontrola → hromadné vystavení → hromadné odeslání e-mailem.
+- Odeslání faktury e-mailem přes Gmail z účtu přihlášeného uživatele, nastavitelný předmět a text, kopie odesílateli.
+- Úprava vystavených i převzatých faktur se záznamem do historie.
+- Sloučení zákazníků (např. stejná firma se špatným IČO) včetně převedení faktur a šablon.
+- Opravený migrační soubor umí přepsat dosud neupravené převzaté faktury.
+
 ## 0.3.0 (2026-11-03)
 - Etapa 2: import faktur a adresáře z vyfakturuj.cz (migrační soubor připravený z PDF exportů).
 - Převzaté faktury nesou odkaz na originální PDF (soubor a stranu) a stav „Převzatá (úhrada neověřena)“; faktury z posledních 60 dní jako „Vystavená“.

@@ -40,7 +40,7 @@ button.danger { color: var(--err); }
 button.small { padding: 4px 10px; font-size: 13px; }
 button.link { border: 0; background: none; color: var(--accent); padding: 0; text-decoration: underline; }
 button:disabled { opacity: .6; cursor: default; }
-input, select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); width: 100%; }
+input, select, textarea { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); width: 100%; }
 input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 label.inline { flex-direction: row; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; }

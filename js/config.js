@@ -10,12 +10,15 @@ export const firebaseConfig = {
   appId: '1:559474197740:web:956e481f37c69389f411c9',
 };
 
+// OAuth klient pro odesílání přes Gmail (Google Cloud → APIs & Services → Credentials → Web client).
+export const GOOGLE_CLIENT_ID = '';
+
 export const ADMIN_EMAILS = ['josef.dvorak@postme.cz'];
 
 // Odhlášení / zamčení po nečinnosti (minuty)
 export const IDLE_LOCK_MINUTES = 60;
 
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.4.0';
 
 // Demo režim: běží jen v tomto prohlížeči, data v localStorage, bez Google přihlášení.
 // Zapne se, když firebaseConfig není vyplněný, nebo parametrem ?demo=1 v adrese.

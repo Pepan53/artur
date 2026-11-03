@@ -1,32 +1,33 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.3.0';
-import { aresLookup, icoValid } from './czech.js?v=0.3.0';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.3.0';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.3.0';
+import * as C from './crypto.js?v=0.4.0';
+import { aresLookup, icoValid } from './czech.js?v=0.4.0';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.4.0';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.4.0';
 
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
-const uid = () => (crypto.randomUUID ? crypto.randomUUID() : C.b64.from(C.randomBytes(12)).replace(/[^a-zA-Z0-9]/g, ''));
-const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : C.b64.from(C.randomBytes(12)).replace(/[^a-zA-Z0-9]/g, ''));
+export const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // ---------------------------------------------------------------- data
 export async function loadDocs(ctx, s, force = false) {
   if (s.docsLoaded && !force) return;
   const rows = await ctx.state.store.listDocs(s.id);
-  const zak = []; const fa = [];
+  const zak = []; const fa = []; const sab = [];
   for (const r of rows) {
     try {
       const obj = await C.openJson(s.dek, r.enc, `doc:${s.id}:${r.id}`);
       obj.id = r.id;
-      if (r.t === 'zak') zak.push(obj); else if (r.t === 'fa') fa.push(obj);
+      if (r.t === 'zak') zak.push(obj); else if (r.t === 'fa') fa.push(obj); else if (r.t === 'sab') sab.push(obj);
     } catch (e) { console.error('Nelze dešifrovat dokument', r.id, e); }
   }
   s.zakaznici = zak.sort((a, b) => (a.nazev || '').localeCompare(b.nazev || '', 'cs'));
   s.faktury = fa;
+  s.sablony = sab;
   s.docsLoaded = true;
 }
 
-async function saveDoc(ctx, s, t, obj) {
+export async function saveDoc(ctx, s, t, obj) {
   const id = obj.id || uid();
   const data = { ...obj }; delete data.id;
   data.zmeneno = new Date().toISOString(); data.zmenil = ctx.state.auth.email;
@@ -36,9 +37,9 @@ async function saveDoc(ctx, s, t, obj) {
   return id;
 }
 
-const canWrite = (ctx, s) => ['vlastnik', 'ucetni'].includes(ctx.myRole(s));
+export const canWrite = (ctx, s) => ['vlastnik', 'ucetni'].includes(ctx.myRole(s));
 
-function zakaznikText(z) { return [z.nazev, z.ico ? `IČO ${z.ico}` : '', z.obec].filter(Boolean).join(' · '); }
+export function zakaznikText(z) { return [z.nazev, z.ico ? `IČO ${z.ico}` : '', z.obec].filter(Boolean).join(' · '); }
 
 // ---------------------------------------------------------------- ADRESÁŘ
 export async function viewAdresar(main, ctx) {
@@ -85,7 +86,8 @@ export async function viewZakaznik(main, ctx) {
       <label>Poznámka<input name="poznamka" value="${esc(z.poznamka)}"></label>
       <label class="inline"><input type="checkbox" name="archiv" ${z.archiv ? 'checked' : ''}> Archivovaný (nenabízí se v nových fakturách)</label>
       </fieldset>
-      ${rw ? `<div class="row"><button class="primary">Uložit</button>${id !== 'novy' ? '<button type="button" id="btn-fa-zak">+ Nová faktura pro zákazníka</button>' : ''}</div>` : ''}
+      ${rw ? `<div class="row"><button class="primary">Uložit</button>${id !== 'novy' ? '<button type="button" id="btn-fa-zak">+ Nová faktura pro zákazníka</button><button type="button" id="btn-merge">Sloučit s jiným zákazníkem</button>' : ''}</div>` : ''}
+    <div id="merge-box" class="box hidden"></div>
     </form>
     ${id !== 'novy' ? `<h2>Faktury zákazníka</h2>${fakturyTable(fa)}` : ''}`);
   main.querySelector('#back').onclick = () => ctx.go('adresar');
@@ -95,6 +97,30 @@ export async function viewZakaznik(main, ctx) {
     try { const r = await aresLookup(form.ico.value); for (const k of ['nazev', 'dic', 'ulice', 'psc', 'obec']) if (r[k]) form[k].value = r[k]; form.ico.value = r.ico; ctx.toast('Načteno z ARES.'); } catch (e) { ctx.toast(e.message, 'err'); }
   };
   const nf = main.querySelector('#btn-fa-zak'); if (nf) nf.onclick = () => { ctx.state.novaProZakaznika = z.id; ctx.go('faktura', 'nova'); };
+  const mg = main.querySelector('#btn-merge');
+  if (mg) mg.onclick = () => {
+    const box = main.querySelector('#merge-box'); box.classList.remove('hidden');
+    const jini = s.zakaznici.filter((x) => x.id !== z.id && !x.archiv);
+    box.innerHTML = `<h2>Sloučit „${esc(z.nazev)}“${z.ico ? ' (IČO ' + esc(z.ico) + ')' : ''} do jiného zákazníka</h2>
+      <p class="muted small">Všechny faktury tohoto zákazníka (${fa.length}) dostanou odběratele podle vybraného záznamu, včetně IČO a adresy. Změna se zapíše do historie faktur a tento záznam se archivuje.</p>
+      <div class="row"><select id="merge-to">${jini.map((x) => `<option value="${esc(x.id)}" ${norm(x.nazev) === norm(z.nazev) ? 'selected' : ''}>${esc(zakaznikText(x))}</option>`).join('')}</select><button class="primary" id="merge-go">Sloučit</button></div>`;
+    box.querySelector('#merge-go').onclick = async () => {
+      const cil = s.zakaznici.find((x) => x.id === box.querySelector('#merge-to').value); if (!cil) return;
+      if (!confirm(`Převést ${fa.length} faktur ze zákazníka „${z.nazev}“ ${z.ico ? '(IČO ' + z.ico + ') ' : ''}na „${cil.nazev}“ ${cil.ico ? '(IČO ' + cil.ico + ')' : ''}?`)) return;
+      const now = new Date().toISOString(); const me = ctx.state.auth.email;
+      for (const f of fa) {
+        const pred = `${f.odberatel?.nazev || ''}${f.odberatel?.ico ? ' (IČO ' + f.odberatel.ico + ')' : ''}`;
+        f.zakaznikId = cil.id; f.odberatel = snapshotOdberatele(cil); f.upraveno = true;
+        f.historie = [...(f.historie || []), { at: now, by: me, akce: `odběratel opraven: ${pred} → ${cil.nazev}${cil.ico ? ' (IČO ' + cil.ico + ')' : ''}` }];
+        await saveDoc(ctx, s, 'fa', f);
+      }
+      z.archiv = true; z.poznamka = [z.poznamka, `sloučeno do ${cil.nazev} ${now.slice(0, 10)}`].filter(Boolean).join('; ');
+      await saveDoc(ctx, s, 'zak', z);
+      for (const t of (s.sablony || []).filter((t) => t.zakaznikId === z.id)) { t.zakaznikId = cil.id; await saveDoc(ctx, s, 'sab', t); }
+      await ctx.audit(s.id, 'zakaznik.slouceno', `${z.nazev} ${z.ico || ''} → ${cil.nazev} ${cil.ico || ''}: ${fa.length} faktur`);
+      await loadDocs(ctx, s, true); ctx.flash(`Sloučeno: ${fa.length} faktur převedeno na ${cil.nazev}.`); ctx.go('zakaznik', cil.id);
+    };
+  };
   form.onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(form);
@@ -117,7 +143,7 @@ export async function viewZakaznik(main, ctx) {
 }
 
 // ---------------------------------------------------------------- FAKTURY – seznam
-function stavPill(f) {
+export function stavPill(f) {
   if (poSplatnosti(f)) return `<span class="pill err">po splatnosti</span>`;
   const cls = { zaplacena: 'ok', koncept: '', stornovana: 'dim', castecne: 'warn', vystavena: 'info', prevzata: '' }[f.stav] || '';
   return `<span class="pill ${cls}">${esc(STAVY[f.stav] || f.stav)}</span>`;
@@ -165,7 +191,7 @@ export async function viewFaktury(main, ctx) {
 }
 
 // ---------------------------------------------------------------- FAKTURA – editor konceptu
-function novyKoncept(ctx, s, zakaznikId) {
+export function novyKoncept(ctx, s, zakaznikId) {
   const d = s.data;
   return {
     typ: 'faktura', stav: 'koncept', datumVystaveni: today(), splatnostDni: d.splatnost ?? 14,
@@ -175,12 +201,12 @@ function novyKoncept(ctx, s, zakaznikId) {
   };
 }
 
-function snapshotOdberatele(z) {
+export function snapshotOdberatele(z) {
   if (!z) return null;
   return { nazev: z.nazev, ico: z.ico, dic: z.dic, kontakt: z.kontakt, ulice: z.ulice, psc: z.psc, obec: z.obec, zeme: z.zeme, email: (z.emaily || [])[0] || '' };
 }
 
-function polozkaRow(p, i) {
+export function polozkaRow(p, i) {
   return `<tr data-i="${i}">
     <td><input name="popis" value="${esc(p.popis)}" placeholder="Popis položky"></td>
     <td><input name="mnozstvi" type="number" step="any" value="${esc(p.mnozstvi)}" class="num"></td>
@@ -336,8 +362,12 @@ function detail(main, ctx, s, f) {
       <button id="btn-view">Zobrazit PDF</button>
       ${rw && ['vystavena', 'castecne', 'prevzata'].includes(f.stav) ? '<button id="btn-pay">Zaznamenat úhradu</button>' : ''}
       ${rw ? '<button id="btn-dup">Duplikovat</button>' : ''}
+      ${rw && f.stav !== 'koncept' ? '<button id="btn-edit-prev">Upravit fakturu</button>' : ''}
+      ${rw && !['koncept', 'stornovana'].includes(f.stav) && f.typ !== 'opravny' ? '<button id="btn-mail">Odeslat e-mailem</button>' : ''}
       ${rw && ['vystavena', 'castecne', 'zaplacena'].includes(f.stav) && f.typ !== 'opravny' ? '<button id="btn-storno" class="danger">Stornovat</button>' : ''}
     </div>
+    <div id="mail-box" class="box hidden form2"></div>
+    <div id="edit-box" class="hidden"></div>
     <form id="f-pay" class="box hidden">
       <h2>Úhrada</h2>
       <div class="row"><label>Datum<input type="date" name="datum" value="${today()}" required></label><label>Částka<input type="number" step="0.01" name="castka" value="${zbyva > 0 ? zbyva : ''}" required></label><label class="grow">Poznámka<input name="pozn" placeholder="např. hotově"></label><button class="primary">Uložit úhradu</button></div>
@@ -377,6 +407,10 @@ function detail(main, ctx, s, f) {
     await saveDoc(ctx, s, 'fa', f); await ctx.audit(s.id, 'faktura.uhrada-zrusena', `${f.cislo}: ${czk(u.castka)}`);
     await loadDocs(ctx, s, true); ctx.go('faktura', f.id);
   }));
+  const mb = main.querySelector('#btn-mail');
+  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.4.0'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
+  const eb = main.querySelector('#btn-edit-prev');
+  if (eb) eb.onclick = () => editPrevzata(main.querySelector('#edit-box'), ctx, s, f);
   const dup = main.querySelector('#btn-dup');
   if (dup) dup.onclick = () => {
     const n = novyKoncept(ctx, s, f.zakaznikId);
@@ -438,6 +472,11 @@ export async function viewImport(main, ctx) {
     }
     const existCisla = new Set(s.faktury.filter((f) => !f.smazano).map((f) => `${f.typ}:${f.cislo}`));
     const nove = data.faktury.filter((f) => !existCisla.has(`${f.typ}:${f.cislo}`));
+    // Opravený migrační soubor: převzaté faktury, které nikdo ručně neupravil a nemají úhrady, lze přepsat.
+    const pokey = (f) => `${f.typ}:${f.cislo}`;
+    const stare = new Map(s.faktury.filter((f) => !f.smazano && f.zdroj === 'vyfakturuj' && !f.upraveno && !(f.uhrady || []).length).map((f) => [pokey(f), f]));
+    const ruzne = (a, b) => JSON.stringify([a.celkem, a.datumVystaveni, a.datumSplatnosti, a.vs, a.odberatel?.nazev, a.odberatel?.ico, (a.polozky || []).map((p) => [p.popis, p.mnozstvi, p.cena])]) !== JSON.stringify([b.celkem, b.datumVystaveni, b.datumSplatnosti, b.vs, b.odberatel?.nazev, b.odberatel?.ico, (b.polozky || []).map((p) => [p.popis, p.mnozstvi, p.cena])]);
+    const opravy = data.faktury.filter((f) => stare.has(pokey(f)) && ruzne(stare.get(pokey(f)), f));
     const zakMap = new Map();
     for (const z of s.zakaznici) { if (z.ico) zakMap.set('ico:' + z.ico, z); zakMap.set('n:' + norm(z.nazev), z); }
     const findZak = (z) => (z.ico && zakMap.get('ico:' + z.ico)) || zakMap.get('n:' + norm(z.nazev));
@@ -458,7 +497,8 @@ export async function viewImport(main, ctx) {
       <p>Zákazníci: ${data.zakaznici.length} v souboru, z toho <strong>${noviZak.length} nových</strong> do adresáře (ostatní se spárují podle IČO nebo názvu).</p>
       <p>Faktury: <strong>${nove.length} nových</strong>, ${data.faktury.length - nove.length} už v ARTURovi je.
          ${otevrene} faktur z posledních 60 dní se převezme jako <em>Vystavené</em> (čekají na úhradu), ostatní jako <em>Převzaté (úhrada neověřena)</em> – úhrady doplní bankovní výpisy v etapě 4.</p>
-      ${nove.length || noviZak.length ? `<button class="primary" id="btn-import">Importovat ${nove.length} faktur a ${noviZak.length} zákazníků</button>` : '<p class="note">Není co importovat.</p>'}
+      ${opravy.length ? `<p class="note"><strong>${opravy.length} už převzatých faktur má v souboru jiné údaje</strong> (opravený převod). Ručně upravené a uhrazené faktury se nemění.<br><label class="inline"><input type="checkbox" id="prepsat" checked> přepsat je opravenými údaji</label></p>` : ''}
+      ${nove.length || noviZak.length || opravy.length ? `<button class="primary" id="btn-import">Importovat ${nove.length} faktur a ${noviZak.length} zákazníků${opravy.length ? ` (+ ${opravy.length} oprav)` : ''}</button>` : '<p class="note">Není co importovat.</p>'}
       <p id="progress" class="muted"></p>`;
     const btn = prev.querySelector('#btn-import');
     if (!btn) return;
@@ -483,6 +523,14 @@ export async function viewImport(main, ctx) {
         delete obj.zakaznikKlic;
         items.push({ id, t: 'fa', obj });
       }
+      if (opravy.length && prev.querySelector('#prepsat')?.checked) {
+        for (const nf of opravy) {
+          const old = stare.get(pokey(nf));
+          const obj = { ...old, ...nf, zakaznikId: klicToId.get(nf.zakaznikKlic) || old.zakaznikId, historie: [...(old.historie || []), { at: now, by: me, akce: 'údaje opraveny z nového migračního souboru' }], zmeneno: now, zmenil: me };
+          delete obj.zakaznikKlic; delete obj.id;
+          items.push({ id: old.id, t: 'fa', obj });
+        }
+      }
       progress.textContent = 'Šifruji…';
       const enc = [];
       for (const [i, it] of items.entries()) {
@@ -492,11 +540,61 @@ export async function viewImport(main, ctx) {
       try {
         await ctx.state.store.putDocs(s.id, enc, (done, total) => { progress.textContent = `Ukládám ${done} / ${total}…`; });
       } catch (err) { console.error(err); progress.textContent = ''; btn.disabled = false; return ctx.toast('Uložení selhalo: ' + err.message + '. Import můžete spustit znovu – uložené faktury se přeskočí.', 'err'); }
-      await ctx.audit(s.id, 'migrace.import', `${nove.length} faktur, ${noviZak.length} zákazníků z vyfakturuj.cz`);
+      await ctx.audit(s.id, 'migrace.import', `${nove.length} faktur, ${noviZak.length} zákazníků z vyfakturuj.cz${opravy.length ? `, ${opravy.length} oprav` : ''}`);
       await loadDocs(ctx, s, true);
       const rok = new Date().getFullYear();
       ctx.flash(`Import hotov: ${nove.length} faktur, ${noviZak.length} zákazníků. Další číslo faktury: ${dalsiCislo(s.data, s.faktury, 'faktura', rok)}.`);
       ctx.go('faktury');
     };
+  };
+}
+
+// ---------------------------------------------------------------- úprava vystavené nebo převzaté faktury
+function editPrevzata(box, ctx, s, f) {
+  const zak = s.zakaznici;
+  box.classList.remove('hidden');
+  box.innerHTML = `<form id="f-prev" class="box form2 wide">
+    <h2>Úprava faktury ${esc(f.cislo)}</h2>
+    <p class="muted small">${f.zdroj === 'vyfakturuj' ? `Opravte údaje podle originálu (${esc(f.archiv?.soubor)}, strana ${esc(f.archiv?.strana)}). ` : ''}Číslo faktury zůstává. Každá změna se zapíše do historie faktury. Pokud už faktura odešla zákazníkovi, pošlete mu po opravě nové PDF.</p>
+    <div class="row">
+      <label class="grow">Odběratel<select name="zakaznikId"><option value="">— ponechat údaje z faktury —</option>${zak.map((z) => `<option value="${esc(z.id)}" ${z.id === f.zakaznikId ? 'selected' : ''}>${esc(zakaznikText(z))}</option>`).join('')}</select></label>
+      <label>VS<input name="vs" value="${esc(f.vs)}"></label>
+    </div>
+    <div class="row">
+      <label>Datum vystavení<input type="date" name="datumVystaveni" value="${esc(f.datumVystaveni)}"></label>
+      <label>Datum splatnosti<input type="date" name="datumSplatnosti" value="${esc(f.datumSplatnosti)}"></label>
+      <label>Stav<select name="stav">${[...(f.zdroj === 'vyfakturuj' ? ['prevzata'] : []), 'vystavena', 'castecne', 'zaplacena', ...(f.stav === 'stornovana' ? ['stornovana'] : [])].map((x) => `<option value="${x}" ${f.stav === x ? 'selected' : ''}>${esc(STAVY[x])}</option>`).join('')}</select></label>
+    </div>
+    <label>Úvodní text<input name="uvod" value="${esc(f.uvod)}"></label>
+    <table class="grid items"><thead><tr><th>Popis</th><th class="num">Množství</th><th>MJ</th><th class="num">Cena za MJ</th><th class="num">Sleva %</th><th class="num">Celkem</th><th></th></tr></thead>
+      <tbody id="pitems">${(f.polozky || []).map(polozkaRow).join('')}</tbody></table>
+    <div class="row space"><button type="button" id="padd" class="small">+ položka</button><div class="total">Celkem: <strong id="ptotal">${czk(f.celkem)}</strong></div></div>
+    <label>Poznámka na faktuře<input name="poznamka" value="${esc(f.poznamka)}"></label>
+    <div class="row"><button class="primary">Uložit opravu</button><button type="button" id="pcancel">Zrušit</button></div>
+  </form>`;
+  const form = box.querySelector('#f-prev'); const items = box.querySelector('#pitems');
+  const readItems = () => [...items.querySelectorAll('tr')].map((tr) => ({ popis: tr.querySelector('[name=popis]').value.trim(), mnozstvi: Number(tr.querySelector('[name=mnozstvi]').value || 0), jednotka: tr.querySelector('[name=jednotka]').value.trim(), cena: Number(tr.querySelector('[name=cena]').value || 0), sleva: Number(tr.querySelector('[name=sleva]').value || 0) }));
+  const refresh = () => { const p = readItems(); items.querySelectorAll('tr').forEach((tr, i) => { tr.querySelector('.rc').textContent = czk(radkaCelkem(p[i])); }); box.querySelector('#ptotal').textContent = czk(soucet(p)); };
+  form.addEventListener('input', refresh);
+  items.addEventListener('click', (e) => { if (e.target.dataset.del != null) { const p = readItems(); p.splice(Number(e.target.dataset.del), 1); items.innerHTML = p.map(polozkaRow).join(''); refresh(); } });
+  box.querySelector('#padd').onclick = () => { const p = readItems(); p.push({ popis: '', mnozstvi: 1, jednotka: '', cena: 0, sleva: 0 }); items.innerHTML = p.map(polozkaRow).join(''); refresh(); };
+  box.querySelector('#pcancel').onclick = () => { box.classList.add('hidden'); box.innerHTML = ''; };
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const d = new FormData(form);
+    const pred = { odberatel: f.odberatel?.nazev, celkem: f.celkem, datum: f.datumVystaveni };
+    const zid = d.get('zakaznikId');
+    if (zid && zid !== f.zakaznikId) { f.zakaznikId = zid; f.odberatel = snapshotOdberatele(s.zakaznici.find((z) => z.id === zid)); }
+    else if (zid) { f.odberatel = snapshotOdberatele(s.zakaznici.find((z) => z.id === zid)); }
+    f.vs = d.get('vs').trim(); f.datumVystaveni = d.get('datumVystaveni'); f.datumSplatnosti = d.get('datumSplatnosti');
+    f.uvod = d.get('uvod').trim(); f.poznamka = d.get('poznamka').trim();
+    f.polozky = readItems().filter((p) => p.popis); f.celkem = soucet(f.polozky);
+    f.stav = d.get('stav'); if (f.stav === 'zaplacena' && !(f.uhrady || []).length) f.uhrady = [{ datum: null, castka: f.celkem, zdroj: 'převzato', pozn: 'uhrazeno dle vyfakturuj.cz, datum neznámé', by: ctx.state.auth.email }];
+    f.upraveno = true;
+    const zmeny = [pred.odberatel !== f.odberatel?.nazev ? `odběratel ${pred.odberatel} → ${f.odberatel?.nazev}` : '', pred.celkem !== f.celkem ? `částka ${czk(pred.celkem)} → ${czk(f.celkem)}` : '', pred.datum !== f.datumVystaveni ? `datum ${datum(pred.datum)} → ${datum(f.datumVystaveni)}` : ''].filter(Boolean).join(', ');
+    f.historie = [...(f.historie || []), { at: new Date().toISOString(), by: ctx.state.auth.email, akce: 'oprava faktury' + (zmeny ? ': ' + zmeny : '') }];
+    await saveDoc(ctx, s, 'fa', f);
+    await ctx.audit(s.id, 'faktura.oprava', `${f.cislo}${zmeny ? ': ' + zmeny : ''}`);
+    await loadDocs(ctx, s, true); ctx.flash(`Faktura ${f.cislo} opravena.`); ctx.go('faktura', f.id);
   };
 }

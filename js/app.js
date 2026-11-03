@@ -1,8 +1,10 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.3.0';
-import * as C from './crypto.js?v=0.3.0';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.3.0';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.3.0';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.4.0';
+import * as C from './crypto.js?v=0.4.0';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.4.0';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.4.0';
+import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.4.0';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.4.0';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -58,11 +60,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.3.0');
+      const { createDemoStore } = await import('./store-demo.js?v=0.4.0');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.3.0');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.4.0');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -272,7 +274,7 @@ async function saveSubjectData(s, data) {
 }
 
 // ---------------------------------------------------------------- hlavní obrazovka
-const NAV_PARENT = { faktura: 'faktury', zakaznik: 'adresar' };
+const NAV_PARENT = { faktura: 'faktury', zakaznik: 'adresar', sablona: 'sablony' };
 
 const ctx = {
   state,
@@ -290,6 +292,8 @@ const ctx = {
 const NAV = [
   ['prehled', 'Přehled'],
   ['faktury', 'Faktury'],
+  ['mesic', 'Měsíční fakturace'],
+  ['sablony', 'Opakované faktury'],
   ['adresar', 'Adresář'],
   ['import', 'Import z vyfakturuj.cz'],
   ['subjekt', 'Údaje subjektu'],
@@ -322,7 +326,7 @@ function renderMain(root) {
   root.querySelector('#btn-out').onclick = () => state.store.signOut();
   root.querySelectorAll('nav.side button').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; state.detailId = null; render(); }));
   const main = root.querySelector('#main');
-  const views = { faktury: (m) => viewFaktury(m, ctx), faktura: (m) => viewFaktura(m, ctx), adresar: (m) => viewAdresar(m, ctx), zakaznik: (m) => viewZakaznik(m, ctx), import: (m) => viewImport(m, ctx), prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
+  const views = { faktury: (m) => viewFaktury(m, ctx), faktura: (m) => viewFaktura(m, ctx), adresar: (m) => viewAdresar(m, ctx), zakaznik: (m) => viewZakaznik(m, ctx), import: (m) => viewImport(m, ctx), mesic: (m) => viewMesic(m, ctx), sablony: (m) => viewSablony(m, ctx), sablona: (m) => viewSablona(m, ctx), prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
   (views[state.view] || viewPrehled)(main).catch((e) => { console.error(e); main.insertAdjacentHTML('beforeend', `<p class="err">${esc(e.message)}</p>`); });
 }
 
@@ -424,6 +428,11 @@ async function viewSubjekt(main) {
       </div>
       <label>Poslední číslo faktury vystavené mimo ARTUR v roce ${new Date().getFullYear()} (pořadí, např. 63 pro ${new Date().getFullYear()}0063)<input name="posledniCislo" type="number" min="0" value="${esc((d.posledniCislo || {})['faktura:' + new Date().getFullYear()] ?? '')}"></label>
       <label class="inline"><input type="checkbox" name="exportMoney" ${d.exportMoney ? 'checked' : ''}> Exportovat do Money S3</label>
+      <h2>E-mail s fakturou</h2>
+      <label>Předmět<input name="emailPredmet" value="${esc(d.emailPredmet || VYCHOZI_PREDMET)}"></label>
+      <label>Text e-mailu<textarea name="emailText" rows="8">${esc(d.emailText || VYCHOZI_TEXT)}</textarea></label>
+      <p class="muted small">Proměnné: {cislo}, {castka}, {splatnost}, {vystaveno}, {ucet}, {vs}, {dodavatel}, {odberatel}.</p>
+      <label class="inline"><input type="checkbox" name="emailKopie" ${d.emailKopie !== false ? 'checked' : ''}> Posílat kopii (skrytě) odesílateli</label>
       <p class="muted small">DPH: neplátce (text „Nejsem plátce DPH“ na faktuře).</p>
       </fieldset>
       ${canEdit ? `<button class="primary">${finishing ? 'Uložit a vytvořit klíč subjektu' : 'Uložit změny'}</button>` : ''}
@@ -465,6 +474,7 @@ async function viewSubjekt(main) {
       nazev: f.get('nazev').trim(), ico, dic: f.get('dic').trim(), ulice: f.get('ulice').trim(), psc: f.get('psc').trim(), obec: f.get('obec').trim(),
       zapis: f.get('zapis').trim(), email: f.get('email').trim(), telefon: f.get('telefon').trim(), web: f.get('web').trim(),
       ucty, rada: f.get('rada').trim() || '{RRRR}{NNNN}', splatnost: Number(f.get('splatnost') || 14), paticka: f.get('paticka').trim(), uvodText: f.get('uvodText').trim(),
+      emailPredmet: f.get('emailPredmet').trim(), emailText: f.get('emailText'), emailKopie: f.get('emailKopie') === 'on',
       radaZal: f.get('radaZal').trim() || 'ZF{RRRR}{NNNN}', radaOpr: f.get('radaOpr').trim() || 'OD{RRRR}{NNNN}',
       posledniCislo: { ...((s.data || {}).posledniCislo || {}), ['faktura:' + new Date().getFullYear()]: Number(f.get('posledniCislo') || 0) },
       exportMoney: f.get('exportMoney') === 'on', platceDph: false,
@@ -683,7 +693,7 @@ async function viewHistorie(main) {
   const s = needSubject(main, { needAccess: false }); if (!s) return;
   const rows = await state.store.listAudit(s.id, 100);
   for (const r of rows) if (r.enc && s.dek) { try { r.detail = (await C.openJson(s.dek, r.enc, 'audit:' + s.id)).detail; } catch { r.detail = '?'; } }
-  const L = { 'subjekt.zalozen': 'Subjekt založen', 'subjekt.aktivovan': 'Založení dokončeno, vytvořen klíč', 'subjekt.upraven': 'Údaje subjektu upraveny', 'clen.pridan': 'Člen přidán', 'clen.odebran': 'Člen odebrán', 'clen.role': 'Změna role', 'pristup.udelen': 'Přístup udělen', 'klic.potvrzen': 'Záchranný klíč potvrzen', 'klic.obnoven': 'Přístup obnoven záchranným klíčem', 'zaloha.stazena': 'Záloha stažena', 'zakaznik.zalozen': 'Zákazník založen', 'zakaznik.upraven': 'Zákazník upraven', 'faktura.vystavena': 'Faktura vystavena', 'faktura.uhrada': 'Úhrada zaznamenána', 'faktura.uhrada-zrusena': 'Úhrada zrušena', 'faktura.stornovana': 'Faktura stornována', 'faktura.koncept-zahozen': 'Koncept zahozen', 'migrace.import': 'Import z vyfakturuj.cz' };
+  const L = { 'subjekt.zalozen': 'Subjekt založen', 'subjekt.aktivovan': 'Založení dokončeno, vytvořen klíč', 'subjekt.upraven': 'Údaje subjektu upraveny', 'clen.pridan': 'Člen přidán', 'clen.odebran': 'Člen odebrán', 'clen.role': 'Změna role', 'pristup.udelen': 'Přístup udělen', 'klic.potvrzen': 'Záchranný klíč potvrzen', 'klic.obnoven': 'Přístup obnoven záchranným klíčem', 'zaloha.stazena': 'Záloha stažena', 'zakaznik.zalozen': 'Zákazník založen', 'zakaznik.upraven': 'Zákazník upraven', 'faktura.vystavena': 'Faktura vystavena', 'faktura.uhrada': 'Úhrada zaznamenána', 'faktura.uhrada-zrusena': 'Úhrada zrušena', 'faktura.stornovana': 'Faktura stornována', 'faktura.koncept-zahozen': 'Koncept zahozen', 'migrace.import': 'Import z vyfakturuj.cz', 'faktura.odeslana': 'Faktura odeslána e-mailem', 'faktura.oprava': 'Oprava faktury', 'sablona.zalozena': 'Šablona založena', 'sablona.upravena': 'Šablona upravena', 'mesic.koncepty': 'Koncepty ze šablon', 'zakaznik.slouceno': 'Zákazníci sloučeni' };
   main.insertAdjacentHTML('beforeend', `<h1>Historie změn – ${esc(subjectName(s))}</h1>
     <table class="grid"><thead><tr><th>Kdy</th><th>Kdo</th><th>Co</th><th>Detail</th></tr></thead><tbody>
     ${rows.map((r) => `<tr><td>${esc(fmtDate(r.at))}</td><td>${esc(r.by)}</td><td>${esc(L[r.action] || r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('') || '<tr><td colspan="4">Žádné záznamy.</td></tr>'}
