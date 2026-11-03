@@ -42,6 +42,10 @@ Migrační soubory obsahují data čitelně (stejně jako PDF exporty). Po impor
 2. Každému uživateli v něm udělit přístup (**Členové a přístup** → Udělit přístup). Nového uživatele aplikace je potřeba do společného adresáře přidat také.
 3. V každém subjektu otevřít **Adresář** → **Převést do společného adresáře**. Zákazníci se sloučí podle IČO, faktury a šablony se přepojí.
 
+## Banka a úhrady (verze 0.5.0)
+
+V internetovém bankovnictví RB stáhněte výpisy ve formátu **GPC (ABO)**. V ARTURu je nahrajte v sekci **Banka a úhrady**, můžete vybrat více souborů najednou. ARTUR zkontroluje, že výpis patří k účtu subjektu a že sedí obraty a zůstatky. Platby spáruje podle VS, včetně splátek. Co nejde spárovat jistě, nabídne ke kontrole, nebo jako nespárovaný příjem k ručnímu přiřazení.
+
 ## Verze
 
 Číslo verze je v patičce aplikace a přehled změn v `CHANGELOG.md`. Po nasazení nové verze se v aplikaci objeví lišta „Je k dispozici nová verze“. Kopie každé verze se ukládá do `FAKTUR\ARTUR-verze`. Nová verze se připraví příkazem `node tools/release.mjs X.Y.Z`.
@@ -117,6 +121,8 @@ Zapomenuté heslo se řeší tlačítkem „Zapomněl(a) jsem heslo“. Po nasta
 - `tests/e2e-import.cjs`: import migračního souboru, číslování, opakovaný import, kontrola IČO.
 - `tests/e2e-adresar.cjs`: společný adresář, převod, sdílení mezi subjekty a uživateli.
 - `tests/e2e-opakovani.cjs`: šablony, měsíční fakturace, odeslání, opravy, slučování.
+- `tests/gpc.test.mjs`: čtení GPC a párování na skutečných výpisech POSTME 01–04/2025.
+- `tests/e2e-banka.cjs`: nahrání výpisů, párování, opakované nahrání, učení účtů.
 - `tests/e2e-faktury.cjs`: adresář, faktury, PDF, úhrady, storno a role v prohlížeči.
 - `tests/e2e.cjs`: průchod v prohlížeči (Playwright) v demo režimu. Pokrývá 3 uživatele, 3 subjekty, role, udělení přístupu, zapomenuté heslo, obnovu záchranným klíčem, kontrolu, že v úložišti nejsou citlivé údaje čitelně, a zobrazení na mobilu.
 - Pravidla Firestore zatím testovaná nejsou, protože emulátor nebyl v této chvíli dostupný. Syntaxi zkontroluje editor pravidel při publikování. Chování ověříme při prvním spuštění podle bodu 5.

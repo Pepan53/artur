@@ -1,8 +1,8 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.4.1';
-import { aresLookup, icoValid } from './czech.js?v=0.4.1';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.4.1';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.4.1';
+import * as C from './crypto.js?v=0.5.0';
+import { aresLookup, icoValid } from './czech.js?v=0.5.0';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.0';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.0';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -16,22 +16,22 @@ export const sdilenyAdresar = (ctx) => ctx.state.subjects.find((x) => jeAdresar(
 
 async function loadOwn(ctx, s) {
   const rows = await ctx.state.store.listDocs(s.id);
-  const zak = []; const fa = []; const sab = [];
+  const zak = []; const fa = []; const sab = []; const bank = []; const vyp = [];
   for (const r of rows) {
     try {
       const obj = await C.openJson(s.dek, r.enc, `doc:${s.id}:${r.id}`);
       obj.id = r.id;
-      if (r.t === 'zak') zak.push(obj); else if (r.t === 'fa') fa.push(obj); else if (r.t === 'sab') sab.push(obj);
+      if (r.t === 'zak') zak.push(obj); else if (r.t === 'fa') fa.push(obj); else if (r.t === 'sab') sab.push(obj); else if (r.t === 'bank') bank.push(obj); else if (r.t === 'vyp') vyp.push(obj);
     } catch (e) { console.error('Nelze dešifrovat dokument', r.id, e); }
   }
-  return { zak: zak.sort((a, b) => (a.nazev || '').localeCompare(b.nazev || '', 'cs')), fa, sab };
+  return { zak: zak.sort((a, b) => (a.nazev || '').localeCompare(b.nazev || '', 'cs')), fa, sab, bank, vyp };
 }
 
 export async function loadDocs(ctx, s, force = false) {
   const A = jeAdresar(s) ? null : sdilenyAdresar(ctx);
   if (s.docsLoaded && !force && (!A || A.docsLoaded)) { if (A) s.zakaznici = A.zakaznici; return; }
   const own = await loadOwn(ctx, s);
-  s.faktury = own.fa; s.sablony = own.sab;
+  s.faktury = own.fa; s.sablony = own.sab; s.banka = own.bank; s.vypisy = own.vyp;
   if (A) {
     if (!A.docsLoaded || force) { const a = await loadOwn(ctx, A); A.zakaznici = a.zak; A.faktury = []; A.sablony = []; A.docsLoaded = true; }
     s.adresar = A;
@@ -439,7 +439,7 @@ function detail(main, ctx, s, f) {
     await loadDocs(ctx, s, true); ctx.go('faktura', f.id);
   }));
   const mb = main.querySelector('#btn-mail');
-  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.4.1'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
+  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.5.0'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
   const eb = main.querySelector('#btn-edit-prev');
   if (eb) eb.onclick = () => editPrevzata(main.querySelector('#edit-box'), ctx, s, f);
   const dup = main.querySelector('#btn-dup');
