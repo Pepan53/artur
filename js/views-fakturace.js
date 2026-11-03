@@ -1,8 +1,8 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.5.0';
-import { aresLookup, icoValid } from './czech.js?v=0.5.0';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.0';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.0';
+import * as C from './crypto.js?v=0.5.1';
+import { aresLookup, icoValid } from './czech.js?v=0.5.1';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.1';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.1';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -439,7 +439,7 @@ function detail(main, ctx, s, f) {
     await loadDocs(ctx, s, true); ctx.go('faktura', f.id);
   }));
   const mb = main.querySelector('#btn-mail');
-  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.5.0'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
+  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.5.1'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
   const eb = main.querySelector('#btn-edit-prev');
   if (eb) eb.onclick = () => editPrevzata(main.querySelector('#edit-box'), ctx, s, f);
   const dup = main.querySelector('#btn-dup');
@@ -488,7 +488,7 @@ export async function viewImport(main, ctx) {
   if (!canWrite(ctx, s)) { main.insertAdjacentHTML('beforeend', '<h1>Import z vyfakturuj.cz</h1><p>Import může provést vlastník nebo účetní.</p>'); return; }
   main.insertAdjacentHTML('beforeend', `
     <h1>Import z vyfakturuj.cz – ${esc(ctx.subjectName(s))}</h1>
-    <p>Vyberte soubor <code>ARTUR-migrace-….json</code> ze složky <strong>FAKTUR\\Migrace</strong>. Soubor vznikl z PDF exportů vyfakturuj.cz. Data se v prohlížeči zašifrují a teprve pak uloží. Faktury, které už v ARTURovi jsou (stejné číslo), se přeskočí, import lze tedy opakovat.</p>
+    <p>Vyberte soubor <code>ARTUR-migrace-….json</code> (faktury) nebo <code>ARTUR-uhrady-….json</code> (data úhrad) ze složky <strong>FAKTUR\\Migrace</strong>. Soubor vznikl z PDF exportů vyfakturuj.cz. Data se v prohlížeči zašifrují a teprve pak uloží. Faktury, které už v ARTURovi jsou (stejné číslo), se přeskočí, import lze tedy opakovat.</p>
     <input type="file" id="file" accept=".json,application/json">
     <div id="preview"></div>`);
   const prev = main.querySelector('#preview');
@@ -496,6 +496,7 @@ export async function viewImport(main, ctx) {
     const file = e.target.files[0]; if (!file) return;
     let data;
     try { data = JSON.parse(await file.text()); } catch { return ctx.toast('Soubor není platný JSON.', 'err'); }
+    if (data.artur === 'uhrady-vyfakturuj') return nahledUhrad(prev, ctx, s, data);
     if (data.artur !== 'migrace-vyfakturuj') return ctx.toast('Toto není migrační soubor ARTURa.', 'err');
     if (data.subjekt?.ico && s.data.ico && data.subjekt.ico !== s.data.ico) return ctx.toast(`Soubor patří k IČO ${data.subjekt.ico} (${data.subjekt.nazev}), ne k vybranému subjektu.`, 'err');
     if (data.subjekt?.nazev && !data.subjekt.ico && norm(data.subjekt.nazev) !== norm(s.data.nazev)) {
@@ -675,4 +676,40 @@ async function prevestDoSpolecneho(ctx, s, btn, stav) {
   await loadDocs(ctx, s, true);
   ctx.flash(`Převedeno do společného adresáře: ${novych} nových, ${sloucenych} sloučených se stávajícími. Přepojeno ${fa.length} faktur a ${sab.length} šablon.`);
   ctx.go('adresar');
+}
+
+// ---------------------------------------------------------------- úhrady převzatých faktur (ze seznamu ve vyfakturuj.cz)
+function nahledUhrad(prev, ctx, s, data) {
+  if (data.subjekt?.ico && s.data.ico && data.subjekt.ico !== s.data.ico) return ctx.toast(`Soubor patří k IČO ${data.subjekt.ico}, ne k vybranému subjektu.`, 'err');
+  const fa = new Map(s.faktury.filter((f) => !f.smazano && f.typ === 'faktura').map((f) => [f.cislo, f]));
+  const plan = []; const chybi = []; const uz = []; const nesedi = [];
+  for (const u of data.uhrady || []) {
+    const f = fa.get(u.cislo);
+    if (!f) { chybi.push(u.cislo); continue; }
+    if ((f.uhrady || []).length || ['zaplacena', 'stornovana'].includes(f.stav)) { uz.push(u.cislo); continue; }
+    if (u.castka != null && Math.abs(Number(u.castka) - f.celkem) > 0.005) nesedi.push(`${u.cislo} (${czk(u.castka)} × faktura ${czk(f.celkem)})`);
+    plan.push({ f, u });
+  }
+  prev.innerHTML = `<h2>Úhrady převzatých faktur</h2>
+    <p>Zdroj: ${esc(data.zdroj || 'vyfakturuj.cz')}. V souboru ${(data.uhrady || []).length} úhrad.</p>
+    <ul><li>Zapíše se: <strong>${plan.length}</strong></li>
+      <li>Už uhrazené (beze změny): ${uz.length}</li>
+      ${chybi.length ? `<li class="warn">Faktura v ARTURovi není: ${esc(chybi.join(', '))} – nejdřív importujte faktury.</li>` : ''}
+      ${nesedi.length ? `<li class="warn">Částka nesedí (zapíše se částka z faktury): ${esc(nesedi.join('; '))}</li>` : ''}</ul>
+    ${plan.length ? `<button class="primary" id="btn-uhrady">Zapsat ${plan.length} úhrad</button>` : '<p class="note">Není co zapsat.</p>'}`;
+  const b = prev.querySelector('#btn-uhrady'); if (!b) return;
+  b.onclick = async () => {
+    b.disabled = true;
+    const now = new Date().toISOString(); const me = ctx.state.auth.email; const enc = [];
+    for (const { f, u } of plan) {
+      f.uhrady = [{ datum: u.datum, castka: f.celkem, zdroj: 'vyfakturuj.cz', pozn: 'datum úhrady převzato z vyfakturuj.cz', by: me }];
+      f.stav = stavPodleUhrad(f);
+      f.historie = [...(f.historie || []), { at: now, by: me, akce: `úhrada ${datum(u.datum)} převzata z vyfakturuj.cz` }];
+      const d = { ...f, zmeneno: now, zmenil: me }; delete d.id;
+      enc.push({ id: f.id, data: { t: 'fa', enc: await C.sealJson(s.dek, d, `doc:${s.id}:${f.id}`) } });
+    }
+    await ctx.state.store.putDocs(s.id, enc);
+    await ctx.audit(s.id, 'migrace.uhrady', `${plan.length} úhrad z vyfakturuj.cz`);
+    await loadDocs(ctx, s, true); ctx.flash(`Zapsáno ${plan.length} úhrad převzatých faktur.`); ctx.go('faktury');
+  };
 }

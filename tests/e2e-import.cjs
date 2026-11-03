@@ -47,6 +47,14 @@ const DIR = process.env.MIG || '/tmp/mig'; // soubory přejmenované bez diakrit
   ok((await text()).includes('Převzato z vyfakturuj.cz. Originál:'), 'detail ukazuje odkaz na originál PDF');
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#btn-pdf')]);
   ok(dl.suggestedFilename().startsWith('Faktura-2023'), 'PDF převzaté faktury lze vytvořit');
+  console.log('▶ Úhrady ze screenshotu');
+  require('fs').writeFileSync('/tmp/mig/uhrady.json', JSON.stringify({ artur: 'uhrady-vyfakturuj', subjekt: { nazev: 'Karolína Dvořáková' }, uhrady: [{ cislo: '20220001', datum: '2022-11-20', castka: 1 }, { cislo: '20220002', datum: '2022-11-21' }, { cislo: '19990001', datum: '2022-11-21' }] }));
+  await nav('Import z vyfakturuj.cz'); await page.setInputFiles('#file', '/tmp/mig/uhrady.json'); await page.waitForTimeout(500);
+  ok((await text()).includes('Zapíše se: 2') && (await text()).includes('19990001') && (await text()).includes('Částka nesedí'), 'náhled úhrad: 2 k zapsání, chybějící a nesedící hlášeny');
+  await page.click('#btn-uhrady'); await page.waitForTimeout(800);
+  ok((await text()).includes('Zapsáno 2 úhrad'), 'úhrady zapsány');
+  await page.selectOption('#f-rok', '2022'); await page.selectOption('#f-stav', 'zaplacena'); await page.waitForTimeout(300);
+  ok((await page.$$('tr[data-fa]')).length === 2, '2 faktury z 2022 uhrazené');
   console.log('▶ Špatný subjekt');
   await subj('09474595', 'POSTME s.r.o.');
   await nav('Import z vyfakturuj.cz'); await page.setInputFiles('#file', DIR + '/josef.json'); await page.waitForTimeout(500);

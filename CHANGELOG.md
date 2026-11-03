@@ -3,6 +3,9 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.5.1 (2026-11-03)
+- Import dat úhrad převzatých faktur (soubor ARTUR-uhrady-….json připravený ze seznamu faktur ve vyfakturuj.cz) – pro roky bez výpisů GPC.
+
 ## 0.5.0 (2026-11-03)
 - Etapa 4: Banka a úhrady – nahrání výpisů GPC z Raiffeisenbank (i více souborů najednou), kontrola obratů a zůstatků, hlídání chybějících výpisů.
 - Automatické párování příjmů podle VS včetně splátek (více plateb k jedné faktuře) a úhrad převzatých faktur z vyfakturuj.cz.
