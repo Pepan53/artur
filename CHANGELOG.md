@@ -3,6 +3,11 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.4.1 (2026-11-03)
+- Společný adresář pro všechny subjekty: vlastní šifrovací klíč, přístup pro všechny uživatele, faktury zůstávají oddělené podle IČO.
+- Převod stávajícího adresáře subjektu do společného (sloučení podle IČO / názvu, přepojení faktur a šablon).
+- Import z vyfakturuj.cz ukládá nové zákazníky rovnou do společného adresáře.
+
 ## 0.4.0 (2026-11-03)
 - Etapa 3: opakované faktury – šablony (měsíčně / čtvrtletně / ročně, den vystavení, fakturace za aktuální nebo předchozí měsíc, platnost od–do).
 - Proměnné v položkách: {mesic}, {v_mesici}, {rok}, {mm}, {obdobi}, {ctvrtleti}.

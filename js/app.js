@@ -1,10 +1,10 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.4.0';
-import * as C from './crypto.js?v=0.4.0';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.4.0';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.4.0';
-import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.4.0';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.4.0';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.4.1';
+import * as C from './crypto.js?v=0.4.1';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.4.1';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.4.1';
+import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.4.1';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.4.1';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -60,11 +60,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.4.0');
+      const { createDemoStore } = await import('./store-demo.js?v=0.4.1');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.4.0');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.4.1');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -311,7 +311,7 @@ function renderMain(root) {
   <header class="top">
     <div class="brand small"><span class="logo">A</span><strong>ARTUR</strong></div>
     <label class="switch">Subjekt
-      <select id="sel-subject">${state.subjects.map((x) => `<option value="${esc(x.id)}" ${x.id === state.current ? 'selected' : ''}>${esc(subjectName(x))}${x.access !== 'ok' ? ' (bez přístupu)' : ''}</option>`).join('') || '<option>— žádný —</option>'}</select>
+      <select id="sel-subject">${state.subjects.map((x) => `<option value="${esc(x.id)}" ${x.id === state.current ? 'selected' : ''}>${x.meta?.druh === 'adresar' ? '📒 ' : ''}${esc(subjectName(x))}${x.access !== 'ok' ? ' (bez přístupu)' : ''}</option>`).join('') || '<option>— žádný —</option>'}</select>
     </label>
     <div class="who">${esc(state.auth.email)}${isAdmin() ? ' <span class="tag">admin</span>' : ''} ${s && myRole(s) ? `<span class="tag">${ROLE_LABEL[myRole(s)]}</span>` : ''}</div>
     <button id="btn-lock" title="Zamknout">Zamknout</button>
@@ -327,6 +327,11 @@ function renderMain(root) {
   root.querySelectorAll('nav.side button').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; state.detailId = null; render(); }));
   const main = root.querySelector('#main');
   const views = { faktury: (m) => viewFaktury(m, ctx), faktura: (m) => viewFaktura(m, ctx), adresar: (m) => viewAdresar(m, ctx), zakaznik: (m) => viewZakaznik(m, ctx), import: (m) => viewImport(m, ctx), mesic: (m) => viewMesic(m, ctx), sablony: (m) => viewSablony(m, ctx), sablona: (m) => viewSablona(m, ctx), prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
+  const BEZ_FAKTUR = ['faktury', 'faktura', 'import', 'mesic', 'sablony', 'sablona'];
+  if (cur()?.meta?.druh === 'adresar' && BEZ_FAKTUR.includes(state.view)) {
+    main.insertAdjacentHTML('beforeend', '<h1>Společný adresář</h1><p>Společný adresář nemá vlastní faktury. Pro fakturaci přepněte nahoře na konkrétní subjekt; adresář je dostupný v sekci Adresář.</p>');
+    return;
+  }
   (views[state.view] || viewPrehled)(main).catch((e) => { console.error(e); main.insertAdjacentHTML('beforeend', `<p class="err">${esc(e.message)}</p>`); });
 }
 
@@ -761,12 +766,19 @@ async function viewAdminNew(main) {
     <form id="f-new" class="form2">
       <div class="row"><label>IČO<input name="ico" inputmode="numeric" maxlength="8"></label><button type="button" id="btn-ares2">Načíst název z ARES</button></div>
       <label>Název subjektu<input name="label" required></label>
+      <label class="inline"><input type="checkbox" name="adresar" id="chk-adresar" ${state.subjects.some((x) => x.meta?.druh === 'adresar') ? 'disabled' : ''}> Společný adresář pro všechny subjekty (místo IČO)${state.subjects.some((x) => x.meta?.druh === 'adresar') ? ' – už existuje' : ''}</label>
       <h2>Členové</h2>
       <div id="mem">${memberRow(state.auth.email, 'vlastnik')}</div>
       <button type="button" id="btn-mem-add" class="small">+ další člen</button>
       <button class="primary">Založit subjekt</button>
     </form>`);
   const form = main.querySelector('#f-new');
+  main.querySelector('#chk-adresar').onchange = async (e) => {
+    if (!e.target.checked) return;
+    form.label.value = 'Společný adresář'; form.ico.value = '';
+    const users = (await state.store.listAllowed()).map((u) => u.id).filter((x) => x !== state.auth.email).sort();
+    main.querySelector('#mem').innerHTML = memberRow(state.auth.email, 'vlastnik') + users.map((u) => memberRow(u, 'ucetni')).join('');
+  };
   main.querySelector('#btn-mem-add').onclick = () => main.querySelector('#mem').insertAdjacentHTML('beforeend', memberRow('', 'ucetni'));
   main.querySelector('#mem').addEventListener('click', (e) => { if (e.target.matches('[data-rm]')) e.target.closest('.row').remove(); });
   main.querySelector('#btn-ares2').onclick = async () => {
@@ -784,7 +796,8 @@ async function viewAdminNew(main) {
     if (!Object.values(members).includes('vlastnik')) return toast('Subjekt musí mít aspoň jednoho vlastníka.', 'err');
     const label = form.label.value.trim();
     busy(form, 'Zakládám…');
-    const sid = await state.store.createSubject({ status: 'novy', label, icoHint: ico, members, memberEmails: Object.keys(members), createdBy: state.auth.email });
+    const druh = form.adresar.checked ? { druh: 'adresar' } : {};
+    const sid = await state.store.createSubject({ status: 'novy', label, icoHint: ico, members, memberEmails: Object.keys(members), createdBy: state.auth.email, ...druh });
     for (const em of Object.keys(members)) if (!(await state.store.listAllowed()).some((u) => u.id === em)) await state.store.setAllowed(em, { name: '', addedBy: state.auth.email });
     if (members[state.auth.email]) await audit(sid, 'subjekt.zalozen', label);
     await loadSubjects();

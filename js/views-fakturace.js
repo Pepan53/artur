@@ -1,8 +1,8 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.4.0';
-import { aresLookup, icoValid } from './czech.js?v=0.4.0';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.4.0';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.4.0';
+import * as C from './crypto.js?v=0.4.1';
+import { aresLookup, icoValid } from './czech.js?v=0.4.1';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.4.1';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.4.1';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -10,8 +10,11 @@ export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : C.b64.from(C
 export const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // ---------------------------------------------------------------- data
-export async function loadDocs(ctx, s, force = false) {
-  if (s.docsLoaded && !force) return;
+// Společný adresář = zvláštní subjekt (meta.druh === 'adresar') s vlastním klíčem, sdílený všemi uživateli.
+export const jeAdresar = (s) => s?.meta?.druh === 'adresar';
+export const sdilenyAdresar = (ctx) => ctx.state.subjects.find((x) => jeAdresar(x) && x.access === 'ok') || null;
+
+async function loadOwn(ctx, s) {
   const rows = await ctx.state.store.listDocs(s.id);
   const zak = []; const fa = []; const sab = [];
   for (const r of rows) {
@@ -21,10 +24,32 @@ export async function loadDocs(ctx, s, force = false) {
       if (r.t === 'zak') zak.push(obj); else if (r.t === 'fa') fa.push(obj); else if (r.t === 'sab') sab.push(obj);
     } catch (e) { console.error('Nelze dešifrovat dokument', r.id, e); }
   }
-  s.zakaznici = zak.sort((a, b) => (a.nazev || '').localeCompare(b.nazev || '', 'cs'));
-  s.faktury = fa;
-  s.sablony = sab;
+  return { zak: zak.sort((a, b) => (a.nazev || '').localeCompare(b.nazev || '', 'cs')), fa, sab };
+}
+
+export async function loadDocs(ctx, s, force = false) {
+  const A = jeAdresar(s) ? null : sdilenyAdresar(ctx);
+  if (s.docsLoaded && !force && (!A || A.docsLoaded)) { if (A) s.zakaznici = A.zakaznici; return; }
+  const own = await loadOwn(ctx, s);
+  s.faktury = own.fa; s.sablony = own.sab;
+  if (A) {
+    if (!A.docsLoaded || force) { const a = await loadOwn(ctx, A); A.zakaznici = a.zak; A.faktury = []; A.sablony = []; A.docsLoaded = true; }
+    s.adresar = A;
+    s.zakaznici = A.zakaznici;
+    s.lokalniZak = own.zak.filter((z) => !z.presunuto);
+  } else {
+    s.adresar = null;
+    s.zakaznici = own.zak;
+    s.lokalniZak = [];
+  }
   s.docsLoaded = true;
+}
+
+/** Uloží zákazníka do společného adresáře (je-li), jinak do subjektu. */
+export async function saveZak(ctx, s, z) {
+  const cil = s.adresar || s;
+  await saveDoc(ctx, cil, 'zak', z);
+  return cil;
 }
 
 export async function saveDoc(ctx, s, t, obj) {
@@ -49,8 +74,12 @@ export async function viewAdresar(main, ctx) {
   const list = s.zakaznici.filter((z) => (st.archiv || !z.archiv) && (!st.q || norm([z.nazev, z.ico, z.obec, (z.emaily || []).join(' ')].join(' ')).includes(norm(st.q))));
   const fakturace = {};
   for (const f of s.faktury) if (f.zakaznikId && f.stav !== 'koncept' && !f.smazano) fakturace[f.zakaznikId] = (fakturace[f.zakaznikId] || 0) + 1;
+  const zapisAdr = canWrite(ctx, s.adresar || s);
+  const prevod = s.adresar && s.lokalniZak.length && canWrite(ctx, s) && canWrite(ctx, s.adresar);
   main.insertAdjacentHTML('beforeend', `
-    <div class="head-row"><h1>Adresář – ${esc(ctx.subjectName(s))}</h1>${canWrite(ctx, s) ? '<button class="primary" id="btn-new-zak">+ Nový zákazník</button>' : ''}</div>
+    <div class="head-row"><h1>${s.adresar || jeAdresar(s) ? 'Společný adresář' : 'Adresář – ' + esc(ctx.subjectName(s))}</h1>${zapisAdr ? '<button class="primary" id="btn-new-zak">+ Nový zákazník</button>' : ''}</div>
+    ${s.adresar || jeAdresar(s) ? '<p class="muted">Adresář je společný pro všechny subjekty. Faktury zůstávají oddělené podle IČO.</p>' : (sdilenyNedostupny(ctx) ? '<p class="note">Společný adresář existuje, ale zatím k němu nemáte přístup – požádejte administrátora o udělení přístupu.</p>' : '')}
+    ${prevod ? `<div class="box warn"><p>Tento subjekt má ještě <strong>${s.lokalniZak.length} zákazníků ve vlastním adresáři</strong>. Převedu je do společného adresáře: shodné podle IČO (nebo názvu) sloučím, ostatní přidám a faktury i šablony přepojím.</p><button class="primary" id="btn-prevod">Převést do společného adresáře</button> <span id="prevod-stav" class="muted"></span></div>` : ''}
     <div class="row filters"><input id="q" placeholder="Hledat název, IČO, obec, e-mail" value="${esc(st.q)}"><label class="inline"><input type="checkbox" id="archiv" ${st.archiv ? 'checked' : ''}> i archivovaní</label></div>
     <table class="grid"><thead><tr><th>Název</th><th>IČO</th><th>Obec</th><th>E-mail</th><th class="num">Faktur</th></tr></thead><tbody>
     ${list.map((z) => `<tr class="click${z.archiv ? ' dim' : ''}" data-id="${esc(z.id)}"><td>${esc(z.nazev)}${z.archiv ? ' <span class="pill">archiv</span>' : ''}</td><td>${esc(z.ico)}</td><td>${esc(z.obec)}</td><td>${esc((z.emaily || [])[0] || '')}</td><td class="num">${fakturace[z.id] || ''}</td></tr>`).join('') || '<tr><td colspan="5">Žádní zákazníci.</td></tr>'}
@@ -60,6 +89,8 @@ export async function viewAdresar(main, ctx) {
   q.oninput = () => { st.q = q.value; clearTimeout(st.t); st.t = setTimeout(() => { ctx.render(); const el = document.getElementById('q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250); };
   main.querySelector('#archiv').onchange = (e) => { st.archiv = e.target.checked; ctx.render(); };
   main.querySelectorAll('tr[data-id]').forEach((tr) => (tr.onclick = () => { ctx.go('zakaznik', tr.dataset.id); }));
+  const pb = main.querySelector('#btn-prevod');
+  if (pb) pb.onclick = () => prevestDoSpolecneho(ctx, s, pb, main.querySelector('#prevod-stav'));
   const nb = main.querySelector('#btn-new-zak'); if (nb) nb.onclick = () => ctx.go('zakaznik', 'novy');
 }
 
@@ -115,7 +146,7 @@ export async function viewZakaznik(main, ctx) {
         await saveDoc(ctx, s, 'fa', f);
       }
       z.archiv = true; z.poznamka = [z.poznamka, `sloučeno do ${cil.nazev} ${now.slice(0, 10)}`].filter(Boolean).join('; ');
-      await saveDoc(ctx, s, 'zak', z);
+      await saveZak(ctx, s, z);
       for (const t of (s.sablony || []).filter((t) => t.zakaznikId === z.id)) { t.zakaznikId = cil.id; await saveDoc(ctx, s, 'sab', t); }
       await ctx.audit(s.id, 'zakaznik.slouceno', `${z.nazev} ${z.ico || ''} → ${cil.nazev} ${cil.ico || ''}: ${fa.length} faktur`);
       await loadDocs(ctx, s, true); ctx.flash(`Sloučeno: ${fa.length} faktur převedeno na ${cil.nazev}.`); ctx.go('zakaznik', cil.id);
@@ -134,7 +165,7 @@ export async function viewZakaznik(main, ctx) {
       splatnost: f.get('splatnost') === '' ? null : Number(f.get('splatnost')), ucty: list(f.get('ucty')), poznamka: f.get('poznamka').trim(), archiv: f.get('archiv') === 'on',
     };
     if (!obj.zalozeno) { obj.zalozeno = new Date().toISOString(); obj.zalozil = ctx.state.auth.email; }
-    await saveDoc(ctx, s, 'zak', obj);
+    await saveZak(ctx, s, obj);
     await ctx.audit(s.id, id === 'novy' ? 'zakaznik.zalozen' : 'zakaznik.upraven', obj.nazev);
     await loadDocs(ctx, s, true);
     ctx.flash(`Uloženo: ${obj.nazev}`);
@@ -408,7 +439,7 @@ function detail(main, ctx, s, f) {
     await loadDocs(ctx, s, true); ctx.go('faktura', f.id);
   }));
   const mb = main.querySelector('#btn-mail');
-  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.4.0'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
+  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.4.1'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
   const eb = main.querySelector('#btn-edit-prev');
   if (eb) eb.onclick = () => editPrevzata(main.querySelector('#edit-box'), ctx, s, f);
   const dup = main.querySelector('#btn-dup');
@@ -532,12 +563,15 @@ export async function viewImport(main, ctx) {
         }
       }
       progress.textContent = 'Šifruji…';
-      const enc = [];
+      const zakCil = s.adresar || s;
+      const enc = []; const encZak = [];
       for (const [i, it] of items.entries()) {
-        enc.push({ id: it.id, data: { t: it.t, enc: await C.sealJson(s.dek, it.obj, `doc:${s.id}:${it.id}`) } });
+        const cil = it.t === 'zak' ? zakCil : s;
+        (cil === s ? enc : encZak).push({ id: it.id, data: { t: it.t, enc: await C.sealJson(cil.dek, it.obj, `doc:${cil.id}:${it.id}`) } });
         if (i % 100 === 0) { progress.textContent = `Šifruji ${i} / ${items.length}…`; await new Promise((r) => setTimeout(r)); }
       }
       try {
+        if (encZak.length) await ctx.state.store.putDocs(zakCil.id, encZak);
         await ctx.state.store.putDocs(s.id, enc, (done, total) => { progress.textContent = `Ukládám ${done} / ${total}…`; });
       } catch (err) { console.error(err); progress.textContent = ''; btn.disabled = false; return ctx.toast('Uložení selhalo: ' + err.message + '. Import můžete spustit znovu – uložené faktury se přeskočí.', 'err'); }
       await ctx.audit(s.id, 'migrace.import', `${nove.length} faktur, ${noviZak.length} zákazníků z vyfakturuj.cz${opravy.length ? `, ${opravy.length} oprav` : ''}`);
@@ -597,4 +631,48 @@ function editPrevzata(box, ctx, s, f) {
     await ctx.audit(s.id, 'faktura.oprava', `${f.cislo}${zmeny ? ': ' + zmeny : ''}`);
     await loadDocs(ctx, s, true); ctx.flash(`Faktura ${f.cislo} opravena.`); ctx.go('faktura', f.id);
   };
+}
+
+function sdilenyNedostupny(ctx) { return ctx.state.subjects.some((x) => jeAdresar(x) && x.access !== 'ok'); }
+
+/** Převede zákazníky subjektu do společného adresáře a přepojí faktury a šablony. */
+async function prevestDoSpolecneho(ctx, s, btn, stav) {
+  const A = s.adresar;
+  if (!confirm(`Převést ${s.lokalniZak.length} zákazníků subjektu ${ctx.subjectName(s)} do společného adresáře?`)) return;
+  btn.disabled = true;
+  const now = new Date().toISOString(); const me = ctx.state.auth.email;
+  const byIco = new Map(); const byName = new Map();
+  for (const z of A.zakaznici) { if (z.ico) byIco.set(z.ico, z); byName.set(norm(z.nazev), z); }
+  const mapa = new Map(); const zmenyA = new Map(); let sloucenych = 0; let novych = 0;
+  for (const z of s.lokalniZak) {
+    let cil = (z.ico && byIco.get(z.ico)) || (!z.ico && byName.get(norm(z.nazev))) || null;
+    if (cil) {
+      sloucenych++;
+      const em = [...new Set([...(cil.emaily || []), ...(z.emaily || [])])]; const uc = [...new Set([...(cil.ucty || []), ...(z.ucty || [])])];
+      const upd = { ...cil, emaily: em, ucty: uc };
+      for (const k of ['dic', 'kontakt', 'ulice', 'psc', 'obec']) if (!upd[k] && z[k]) upd[k] = z[k];
+      if (upd.splatnost == null && z.splatnost != null) upd.splatnost = z.splatnost;
+      zmenyA.set(cil.id, upd);
+    } else {
+      novych++;
+      cil = { ...z, id: uid(), presunuto: undefined, poznamka: z.poznamka || '' };
+      delete cil.presunuto;
+      zmenyA.set(cil.id, cil);
+      if (cil.ico) byIco.set(cil.ico, cil); byName.set(norm(cil.nazev), cil);
+    }
+    mapa.set(z.id, cil.id);
+  }
+  const seal = async (cil, list, t) => Promise.all(list.map(async (o) => { const d = { ...o, zmeneno: now, zmenil: me }; const id = d.id; delete d.id; return { id, data: { t, enc: await C.sealJson(cil.dek, d, `doc:${cil.id}:${id}`) } }; }));
+  stav.textContent = 'Ukládám společný adresář…';
+  await ctx.state.store.putDocs(A.id, await seal(A, [...zmenyA.values()], 'zak'));
+  const fa = s.faktury.filter((f) => mapa.has(f.zakaznikId)).map((f) => ({ ...f, zakaznikId: mapa.get(f.zakaznikId) }));
+  const sab = (s.sablony || []).filter((t) => mapa.has(t.zakaznikId)).map((t) => ({ ...t, zakaznikId: mapa.get(t.zakaznikId) }));
+  const lok = s.lokalniZak.map((z) => ({ ...z, presunuto: mapa.get(z.id), archiv: true }));
+  stav.textContent = `Přepojuji ${fa.length} faktur…`;
+  await ctx.state.store.putDocs(s.id, [...await seal(s, fa, 'fa'), ...await seal(s, sab, 'sab'), ...await seal(s, lok, 'zak')], (d, t) => { stav.textContent = `Ukládám ${d} / ${t}…`; });
+  await ctx.audit(s.id, 'adresar.prevod', `${s.lokalniZak.length} zákazníků → společný adresář (${novych} nových, ${sloucenych} sloučených), ${fa.length} faktur přepojeno`);
+  await ctx.audit(A.id, 'adresar.prevod', `z ${ctx.subjectName(s)}: ${novych} nových, ${sloucenych} sloučených`);
+  await loadDocs(ctx, s, true);
+  ctx.flash(`Převedeno do společného adresáře: ${novych} nových, ${sloucenych} sloučených se stávajícími. Přepojeno ${fa.length} faktur a ${sab.length} šablon.`);
+  ctx.go('adresar');
 }
