@@ -12,6 +12,7 @@ export const STAVY = {
   castecne: 'Částečně uhrazená',
   zaplacena: 'Uhrazená',
   stornovana: 'Stornovaná',
+  prevzata: 'Převzatá (úhrada neověřena)',
 };
 
 export const round2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
@@ -33,6 +34,7 @@ export function uhrazeno(f) {
 /** Stav podle úhrad (koncept a storno se nemění). */
 export function stavPodleUhrad(f) {
   if (f.stav === 'koncept' || f.stav === 'stornovana') return f.stav;
+  if (f.stav === 'prevzata' && !(f.uhrady || []).length) return 'prevzata';
   const celkem = round2(f.celkem);
   const u = uhrazeno(f);
   if (celkem <= 0) return 'zaplacena';

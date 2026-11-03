@@ -27,6 +27,15 @@ ARTUR je webová aplikace bez vlastního serveru:
 - **Úhrady** zadané ručně, i částečné. Automatické párování z GPC přijde v etapě 4.
 - **Číslování**: v Údajích subjektu vyplňte „Poslední číslo faktury vystavené mimo ARTUR“. Pokud byla poslední faktura z vyfakturuj.cz 20260063, vyplňte 63 a ARTUR pokračuje číslem 20260064.
 
+## Etapa 2 – převod z vyfakturuj.cz (verze 0.3.0)
+
+1. PDF exporty z vyfakturuj.cz jsou ve `FAKTUR\Vyfakturuj.cz\<subjekt>`.
+2. Claude z nich připravil migrační soubory `FAKTUR\Migrace\ARTUR-migrace-<subjekt>.json` (čísla, data, odběratelé, položky, částky, odkaz na stranu v originálním PDF).
+3. V ARTURovi vyberte subjekt → **Import z vyfakturuj.cz** → zvolte soubor → zkontrolujte náhled → **Importovat**.
+4. Číslování pak samo navazuje na poslední převzaté číslo.
+
+Migrační soubory obsahují data čitelně (stejně jako PDF exporty). Po importu je můžete smazat.
+
 ## Verze
 
 Číslo verze je v patičce aplikace a přehled změn v `CHANGELOG.md`. Po nasazení nové verze se v aplikaci objeví lišta „Je k dispozici nová verze“. Kopie každé verze se ukládá do `FAKTUR\ARTUR-verze`. Nová verze se připraví příkazem `node tools/release.mjs X.Y.Z`.
@@ -99,6 +108,7 @@ Zapomenuté heslo se řeší tlačítkem „Zapomněl(a) jsem heslo“. Po nasta
 ## Testy
 - `tests/crypto.test.mjs`: šifrování, záchranný klíč, IBAN a IČO (`node tests/crypto.test.mjs`).
 - `tests/invoices.test.mjs`: číslování, součty, stavy, QR Platba.
+- `tests/e2e-import.cjs`: import migračního souboru, číslování, opakovaný import, kontrola IČO.
 - `tests/e2e-faktury.cjs`: adresář, faktury, PDF, úhrady, storno a role v prohlížeči.
 - `tests/e2e.cjs`: průchod v prohlížeči (Playwright) v demo režimu. Pokrývá 3 uživatele, 3 subjekty, role, udělení přístupu, zapomenuté heslo, obnovu záchranným klíčem, kontrolu, že v úložišti nejsou citlivé údaje čitelně, a zobrazení na mobilu.
 - Pravidla Firestore zatím testovaná nejsou, protože emulátor nebyl v této chvíli dostupný. Syntaxi zkontroluje editor pravidel při publikování. Chování ověříme při prvním spuštění podle bodu 5.

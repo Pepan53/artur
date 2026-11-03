@@ -1,6 +1,6 @@
 // ARTUR – demo úložiště v localStorage. Slouží k vyzkoušení a testům bez Firebase.
 // Napodobuje pravidla z firestore.rules, aby se chyby v oprávněních projevily i v demu.
-import { ADMIN_EMAILS } from './config.js?v=0.2.0';
+import { ADMIN_EMAILS } from './config.js?v=0.3.0';
 
 const KEY = 'artur-demo-db';
 const SESSION = 'artur-demo-user';
@@ -83,6 +83,11 @@ export function createDemoStore() {
     async listDocs(sid) { const db = load(); const s = db.subjects[sid]; if (!s || !role(s)) deny('nejste členem'); return Object.entries(s.docs).map(([id, v]) => ({ id, ...clone(v) })); },
     async putDoc(sid, id, data) { const db = load(); const s = db.subjects[sid]; if (!s || !['vlastnik', 'ucetni'].includes(role(s))) deny('zápis smí vlastník nebo účetní'); s.docs[id] = { ...clone(data), updatedAt: now() }; save(db); },
 
+    async putDocs(sid, items, onProgress) {
+      const db = load(); const s = db.subjects[sid]; if (!s || !['vlastnik', 'ucetni'].includes(role(s))) deny('zápis smí vlastník nebo účetní');
+      for (const it of items) s.docs[it.id] = { ...clone(it.data), updatedAt: now() };
+      save(db); onProgress?.(items.length, items.length);
+    },
     async addAudit(sid, entry) { const db = load(); const s = db.subjects[sid]; if (!s || !role(s) || entry.by !== me()) deny('audit'); s.audit.push({ ...clone(entry), at: now() }); save(db); },
     async listAudit(sid, n = 50) { const db = load(); const s = db.subjects[sid]; if (!s || !role(s)) deny('nejste členem'); return clone(s.audit).reverse().slice(0, n); },
 

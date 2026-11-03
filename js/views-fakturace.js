@@ -1,8 +1,8 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.2.0';
-import { aresLookup, icoValid } from './czech.js?v=0.2.0';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.2.0';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.2.0';
+import * as C from './crypto.js?v=0.3.0';
+import { aresLookup, icoValid } from './czech.js?v=0.3.0';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.3.0';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.3.0';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -119,7 +119,7 @@ export async function viewZakaznik(main, ctx) {
 // ---------------------------------------------------------------- FAKTURY – seznam
 function stavPill(f) {
   if (poSplatnosti(f)) return `<span class="pill err">po splatnosti</span>`;
-  const cls = { zaplacena: 'ok', koncept: '', stornovana: 'dim', castecne: 'warn', vystavena: 'info' }[f.stav] || '';
+  const cls = { zaplacena: 'ok', koncept: '', stornovana: 'dim', castecne: 'warn', vystavena: 'info', prevzata: '' }[f.stav] || '';
   return `<span class="pill ${cls}">${esc(STAVY[f.stav] || f.stav)}</span>`;
 }
 
@@ -329,11 +329,12 @@ function detail(main, ctx, s, f) {
       <div class="box"><span class="muted small">Data</span><p>Vystaveno ${datum(f.datumVystaveni)}<br>Splatnost ${datum(f.datumSplatnosti)}<br>VS ${esc(f.vs)}</p></div>
     </div>
     ${f.opravuje ? `<p class="note">Opravný doklad k faktuře ${esc(f.opravuje)}.</p>` : ''}
+    ${f.zdroj === 'vyfakturuj' ? `<p class="note">Převzato z vyfakturuj.cz. Originál: ${esc(f.archiv?.soubor)}, strana ${esc(f.archiv?.strana)}.${f.stav === 'prevzata' ? ' Úhrada zatím nebyla ověřena – doplní se z bankovních výpisů (etapa 4), nebo ji zaznamenejte ručně.' : ''}</p>` : ''}
     ${opravny ? `<p class="note">Stornováno opravným dokladem <button class="link" data-goto="${esc(opravny.id)}">${esc(opravny.cislo)}</button>.</p>` : ''}
     <div class="row">
       <button class="primary" id="btn-pdf">Stáhnout PDF</button>
       <button id="btn-view">Zobrazit PDF</button>
-      ${rw && ['vystavena', 'castecne'].includes(f.stav) ? '<button id="btn-pay">Zaznamenat úhradu</button>' : ''}
+      ${rw && ['vystavena', 'castecne', 'prevzata'].includes(f.stav) ? '<button id="btn-pay">Zaznamenat úhradu</button>' : ''}
       ${rw ? '<button id="btn-dup">Duplikovat</button>' : ''}
       ${rw && ['vystavena', 'castecne', 'zaplacena'].includes(f.stav) && f.typ !== 'opravny' ? '<button id="btn-storno" class="danger">Stornovat</button>' : ''}
     </div>
@@ -413,4 +414,89 @@ async function openPdf(ctx, s, f) {
     const url = URL.createObjectURL(blob);
     if (w) w.location.href = url; else ctx.download(pdfFileName(f, s.data), blob);
   } catch (e) { if (w) w.close(); ctx.toast('PDF se nepodařilo vytvořit: ' + e.message, 'err'); }
+}
+
+// ---------------------------------------------------------------- IMPORT z vyfakturuj.cz (etapa 2)
+export async function viewImport(main, ctx) {
+  const s = ctx.needSubject(main); if (!s) return;
+  await loadDocs(ctx, s);
+  if (!canWrite(ctx, s)) { main.insertAdjacentHTML('beforeend', '<h1>Import z vyfakturuj.cz</h1><p>Import může provést vlastník nebo účetní.</p>'); return; }
+  main.insertAdjacentHTML('beforeend', `
+    <h1>Import z vyfakturuj.cz – ${esc(ctx.subjectName(s))}</h1>
+    <p>Vyberte soubor <code>ARTUR-migrace-….json</code> ze složky <strong>FAKTUR\\Migrace</strong>. Soubor vznikl z PDF exportů vyfakturuj.cz. Data se v prohlížeči zašifrují a teprve pak uloží. Faktury, které už v ARTURovi jsou (stejné číslo), se přeskočí, import lze tedy opakovat.</p>
+    <input type="file" id="file" accept=".json,application/json">
+    <div id="preview"></div>`);
+  const prev = main.querySelector('#preview');
+  main.querySelector('#file').onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    let data;
+    try { data = JSON.parse(await file.text()); } catch { return ctx.toast('Soubor není platný JSON.', 'err'); }
+    if (data.artur !== 'migrace-vyfakturuj') return ctx.toast('Toto není migrační soubor ARTURa.', 'err');
+    if (data.subjekt?.ico && s.data.ico && data.subjekt.ico !== s.data.ico) return ctx.toast(`Soubor patří k IČO ${data.subjekt.ico} (${data.subjekt.nazev}), ne k vybranému subjektu.`, 'err');
+    if (data.subjekt?.nazev && !data.subjekt.ico && norm(data.subjekt.nazev) !== norm(s.data.nazev)) {
+      if (!confirm(`Soubor je pro „${data.subjekt.nazev}“, vybraný subjekt je „${s.data.nazev}“. Pokračovat?`)) return;
+    }
+    const existCisla = new Set(s.faktury.filter((f) => !f.smazano).map((f) => `${f.typ}:${f.cislo}`));
+    const nove = data.faktury.filter((f) => !existCisla.has(`${f.typ}:${f.cislo}`));
+    const zakMap = new Map();
+    for (const z of s.zakaznici) { if (z.ico) zakMap.set('ico:' + z.ico, z); zakMap.set('n:' + norm(z.nazev), z); }
+    const findZak = (z) => (z.ico && zakMap.get('ico:' + z.ico)) || zakMap.get('n:' + norm(z.nazev));
+    const noviZak = data.zakaznici.filter((z) => !findZak(z));
+    const roky = {};
+    for (const f of data.faktury) {
+      const r = (f.datumVystaveni || f.cislo).slice(0, 4);
+      const x = roky[r] ||= { pocet: 0, soucet: 0, nove: 0, posledni: '' };
+      x.pocet++; x.soucet += Number(f.celkem || 0); if (!existCisla.has(`${f.typ}:${f.cislo}`)) x.nove++; if (f.cislo > x.posledni) x.posledni = f.cislo;
+    }
+    const otevrene = nove.filter((f) => f.stav === 'vystavena').length;
+    prev.innerHTML = `
+      <h2>Náhled</h2>
+      <p>${esc(data.subjekt?.nazev || '')} ${data.subjekt?.ico ? 'IČO ' + esc(data.subjekt.ico) : ''} · připraveno ${esc(new Date(data.vytvoreno).toLocaleString('cs-CZ'))}</p>
+      <table class="grid"><thead><tr><th>Rok</th><th class="num">Faktur</th><th class="num">Nových</th><th class="num">Fakturováno</th><th>Poslední číslo</th></tr></thead><tbody>
+        ${Object.entries(roky).sort().map(([r, x]) => `<tr><td>${r}</td><td class="num">${x.pocet}</td><td class="num">${x.nove}</td><td class="num">${czk(x.soucet)}</td><td>${esc(x.posledni)}</td></tr>`).join('')}
+      </tbody></table>
+      <p>Zákazníci: ${data.zakaznici.length} v souboru, z toho <strong>${noviZak.length} nových</strong> do adresáře (ostatní se spárují podle IČO nebo názvu).</p>
+      <p>Faktury: <strong>${nove.length} nových</strong>, ${data.faktury.length - nove.length} už v ARTURovi je.
+         ${otevrene} faktur z posledních 60 dní se převezme jako <em>Vystavené</em> (čekají na úhradu), ostatní jako <em>Převzaté (úhrada neověřena)</em> – úhrady doplní bankovní výpisy v etapě 4.</p>
+      ${nove.length || noviZak.length ? `<button class="primary" id="btn-import">Importovat ${nove.length} faktur a ${noviZak.length} zákazníků</button>` : '<p class="note">Není co importovat.</p>'}
+      <p id="progress" class="muted"></p>`;
+    const btn = prev.querySelector('#btn-import');
+    if (!btn) return;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const progress = prev.querySelector('#progress');
+      const now = new Date().toISOString(); const me = ctx.state.auth.email;
+      const items = [];
+      const klicToId = new Map();
+      for (const z of data.zakaznici) {
+        const ex = findZak(z);
+        if (ex) { klicToId.set(z.klic, ex.id); continue; }
+        const id = uid();
+        const obj = { nazev: z.nazev, ico: z.ico || '', dic: z.dic || '', kontakt: z.kontakt || '', ulice: z.ulice || '', psc: z.psc || '', obec: z.obec || '', zeme: z.zeme || 'Česká republika',
+          emaily: z.emaily || [], splatnost: z.splatnost ?? null, ucty: z.ucty || [], poznamka: z.poznamka || '', archiv: false, zalozeno: now, zalozil: me, zdroj: 'vyfakturuj', zmeneno: now, zmenil: me };
+        klicToId.set(z.klic, id);
+        items.push({ id, t: 'zak', obj });
+      }
+      for (const f of nove) {
+        const id = uid();
+        const obj = { ...f, zakaznikId: klicToId.get(f.zakaznikKlic) || null, uhrady: [], historie: [{ at: now, by: me, akce: 'převzato z vyfakturuj.cz' }], vystavil: 'vyfakturuj.cz', zmeneno: now, zmenil: me };
+        delete obj.zakaznikKlic;
+        items.push({ id, t: 'fa', obj });
+      }
+      progress.textContent = 'Šifruji…';
+      const enc = [];
+      for (const [i, it] of items.entries()) {
+        enc.push({ id: it.id, data: { t: it.t, enc: await C.sealJson(s.dek, it.obj, `doc:${s.id}:${it.id}`) } });
+        if (i % 100 === 0) { progress.textContent = `Šifruji ${i} / ${items.length}…`; await new Promise((r) => setTimeout(r)); }
+      }
+      try {
+        await ctx.state.store.putDocs(s.id, enc, (done, total) => { progress.textContent = `Ukládám ${done} / ${total}…`; });
+      } catch (err) { console.error(err); progress.textContent = ''; btn.disabled = false; return ctx.toast('Uložení selhalo: ' + err.message + '. Import můžete spustit znovu – uložené faktury se přeskočí.', 'err'); }
+      await ctx.audit(s.id, 'migrace.import', `${nove.length} faktur, ${noviZak.length} zákazníků z vyfakturuj.cz`);
+      await loadDocs(ctx, s, true);
+      const rok = new Date().getFullYear();
+      ctx.flash(`Import hotov: ${nove.length} faktur, ${noviZak.length} zákazníků. Další číslo faktury: ${dalsiCislo(s.data, s.faktury, 'faktura', rok)}.`);
+      ctx.go('faktury');
+    };
+  };
 }

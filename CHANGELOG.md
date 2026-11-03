@@ -3,6 +3,12 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.3.0 (2026-11-03)
+- Etapa 2: import faktur a adresáře z vyfakturuj.cz (migrační soubor připravený z PDF exportů).
+- Převzaté faktury nesou odkaz na originální PDF (soubor a stranu) a stav „Převzatá (úhrada neověřena)“; faktury z posledních 60 dní jako „Vystavená“.
+- Číslování po importu automaticky navazuje na poslední převzaté číslo.
+- Opakovaný import přeskočí faktury, které už v ARTURovi jsou.
+
 ## 0.2.0 (2026-11-03)
 - Etapa 1: adresář zákazníků (ARES, e-maily, splatnost, známé účty, archivace, kontrola duplicitního IČO).
 - Faktury: koncept → vystavení, číselné řady (faktura, zálohová, opravný doklad), navázání na poslední číslo z vyfakturuj.cz.

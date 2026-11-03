@@ -10,7 +10,7 @@ export async function createFirebaseStore(config) {
   const app = initializeApp(config);
   const auth = authMod.getAuth(app);
   const db = fs.getFirestore(app);
-  const { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, query, where, orderBy, limit, serverTimestamp } = fs;
+  const { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, query, where, orderBy, limit, serverTimestamp, writeBatch } = fs;
 
   const snapList = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const lower = (e) => (e || '').trim().toLowerCase();
@@ -56,6 +56,21 @@ export async function createFirebaseStore(config) {
     async listDocs(sid) { return snapList(await getDocs(collection(db, 'subjects', sid, 'docs'))); },
     async putDoc(sid, id, data) { await setDoc(doc(db, 'subjects', sid, 'docs', id), { ...data, updatedAt: serverTimestamp() }); },
 
+    async putDocs(sid, items, onProgress) {
+      for (let i = 0; i < items.length; i += 200) {
+        const chunk = items.slice(i, i + 200);
+        try {
+          const b = writeBatch(db);
+          for (const it of chunk) b.set(doc(db, 'subjects', sid, 'docs', it.id), { ...it.data, updatedAt: serverTimestamp() });
+          await b.commit();
+        } catch (e) {
+          // Záložní cesta: po jednom (např. při limitu pravidel na dávku).
+          console.warn('Dávkový zápis selhal, zapisuji po jednom:', e.message);
+          for (const it of chunk) await setDoc(doc(db, 'subjects', sid, 'docs', it.id), { ...it.data, updatedAt: serverTimestamp() });
+        }
+        onProgress?.(Math.min(i + 200, items.length), items.length);
+      }
+    },
     async addAudit(sid, entry) { await addDoc(collection(db, 'subjects', sid, 'audit'), { ...entry, at: serverTimestamp() }); },
     async listAudit(sid, n = 50) {
       const rows = snapList(await getDocs(query(collection(db, 'subjects', sid, 'audit'), orderBy('at', 'desc'), limit(n))));

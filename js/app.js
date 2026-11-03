@@ -1,8 +1,8 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.2.0';
-import * as C from './crypto.js?v=0.2.0';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.2.0';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik } from './views-fakturace.js?v=0.2.0';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.3.0';
+import * as C from './crypto.js?v=0.3.0';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.3.0';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.3.0';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -58,11 +58,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.2.0');
+      const { createDemoStore } = await import('./store-demo.js?v=0.3.0');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.2.0');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.3.0');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -291,6 +291,7 @@ const NAV = [
   ['prehled', 'Přehled'],
   ['faktury', 'Faktury'],
   ['adresar', 'Adresář'],
+  ['import', 'Import z vyfakturuj.cz'],
   ['subjekt', 'Údaje subjektu'],
   ['clenove', 'Členové a přístup'],
   ['klice', 'Záchranný klíč a záloha'],
@@ -321,7 +322,7 @@ function renderMain(root) {
   root.querySelector('#btn-out').onclick = () => state.store.signOut();
   root.querySelectorAll('nav.side button').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; state.detailId = null; render(); }));
   const main = root.querySelector('#main');
-  const views = { faktury: (m) => viewFaktury(m, ctx), faktura: (m) => viewFaktura(m, ctx), adresar: (m) => viewAdresar(m, ctx), zakaznik: (m) => viewZakaznik(m, ctx), prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
+  const views = { faktury: (m) => viewFaktury(m, ctx), faktura: (m) => viewFaktura(m, ctx), adresar: (m) => viewAdresar(m, ctx), zakaznik: (m) => viewZakaznik(m, ctx), import: (m) => viewImport(m, ctx), prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
   (views[state.view] || viewPrehled)(main).catch((e) => { console.error(e); main.insertAdjacentHTML('beforeend', `<p class="err">${esc(e.message)}</p>`); });
 }
 
@@ -682,7 +683,7 @@ async function viewHistorie(main) {
   const s = needSubject(main, { needAccess: false }); if (!s) return;
   const rows = await state.store.listAudit(s.id, 100);
   for (const r of rows) if (r.enc && s.dek) { try { r.detail = (await C.openJson(s.dek, r.enc, 'audit:' + s.id)).detail; } catch { r.detail = '?'; } }
-  const L = { 'subjekt.zalozen': 'Subjekt založen', 'subjekt.aktivovan': 'Založení dokončeno, vytvořen klíč', 'subjekt.upraven': 'Údaje subjektu upraveny', 'clen.pridan': 'Člen přidán', 'clen.odebran': 'Člen odebrán', 'clen.role': 'Změna role', 'pristup.udelen': 'Přístup udělen', 'klic.potvrzen': 'Záchranný klíč potvrzen', 'klic.obnoven': 'Přístup obnoven záchranným klíčem', 'zaloha.stazena': 'Záloha stažena', 'zakaznik.zalozen': 'Zákazník založen', 'zakaznik.upraven': 'Zákazník upraven', 'faktura.vystavena': 'Faktura vystavena', 'faktura.uhrada': 'Úhrada zaznamenána', 'faktura.uhrada-zrusena': 'Úhrada zrušena', 'faktura.stornovana': 'Faktura stornována', 'faktura.koncept-zahozen': 'Koncept zahozen' };
+  const L = { 'subjekt.zalozen': 'Subjekt založen', 'subjekt.aktivovan': 'Založení dokončeno, vytvořen klíč', 'subjekt.upraven': 'Údaje subjektu upraveny', 'clen.pridan': 'Člen přidán', 'clen.odebran': 'Člen odebrán', 'clen.role': 'Změna role', 'pristup.udelen': 'Přístup udělen', 'klic.potvrzen': 'Záchranný klíč potvrzen', 'klic.obnoven': 'Přístup obnoven záchranným klíčem', 'zaloha.stazena': 'Záloha stažena', 'zakaznik.zalozen': 'Zákazník založen', 'zakaznik.upraven': 'Zákazník upraven', 'faktura.vystavena': 'Faktura vystavena', 'faktura.uhrada': 'Úhrada zaznamenána', 'faktura.uhrada-zrusena': 'Úhrada zrušena', 'faktura.stornovana': 'Faktura stornována', 'faktura.koncept-zahozen': 'Koncept zahozen', 'migrace.import': 'Import z vyfakturuj.cz' };
   main.insertAdjacentHTML('beforeend', `<h1>Historie změn – ${esc(subjectName(s))}</h1>
     <table class="grid"><thead><tr><th>Kdy</th><th>Kdo</th><th>Co</th><th>Detail</th></tr></thead><tbody>
     ${rows.map((r) => `<tr><td>${esc(fmtDate(r.at))}</td><td>${esc(r.by)}</td><td>${esc(L[r.action] || r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('') || '<tr><td colspan="4">Žádné záznamy.</td></tr>'}
