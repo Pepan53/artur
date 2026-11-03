@@ -19,6 +19,18 @@ ARTUR je webová aplikace bez vlastního serveru:
 - Údaje subjektu: načtení z ARES, bankovní účty s výpočtem IBAN a kontrolou čísla účtu, číselná řada, splatnost, příznak exportu do Money S3.
 - Historie změn (audit), šifrovaná záloha ve formátu JSON, zamčení po 60 minutách nečinnosti, změna hesla.
 
+## Co je hotové v etapě 1 (verze 0.2.0)
+
+- **Adresář** zákazníků: načtení z ARES, e-maily pro zasílání, vlastní splatnost, známé účty pro párování plateb, archivace.
+- **Faktury**: koncept, vystavení s automatickým číslem, zálohové faktury, storno opravným dokladem, duplikace.
+- **PDF** s QR Platbou a českou diakritikou.
+- **Úhrady** zadané ručně, i částečné. Automatické párování z GPC přijde v etapě 4.
+- **Číslování**: v Údajích subjektu vyplňte „Poslední číslo faktury vystavené mimo ARTUR“. Pokud byla poslední faktura z vyfakturuj.cz 20260063, vyplňte 63 a ARTUR pokračuje číslem 20260064.
+
+## Verze
+
+Číslo verze je v patičce aplikace a přehled změn v `CHANGELOG.md`. Po nasazení nové verze se v aplikaci objeví lišta „Je k dispozici nová verze“. Kopie každé verze se ukládá do `FAKTUR\ARTUR-verze`. Nová verze se připraví příkazem `node tools/release.mjs X.Y.Z`.
+
 ## Demo bez Firebase
 
 Spusťte aplikaci s `?demo=1` na konci adresy, nebo bez vyplněného `js/config.js`. Běží pak jen v prohlížeči a data ukládá do jeho úložiště (localStorage). Hodí se k vyzkoušení. Pro skutečná data demo nepoužívejte.
@@ -86,5 +98,7 @@ Zapomenuté heslo se řeší tlačítkem „Zapomněl(a) jsem heslo“. Po nasta
 
 ## Testy
 - `tests/crypto.test.mjs`: šifrování, záchranný klíč, IBAN a IČO (`node tests/crypto.test.mjs`).
+- `tests/invoices.test.mjs`: číslování, součty, stavy, QR Platba.
+- `tests/e2e-faktury.cjs`: adresář, faktury, PDF, úhrady, storno a role v prohlížeči.
 - `tests/e2e.cjs`: průchod v prohlížeči (Playwright) v demo režimu. Pokrývá 3 uživatele, 3 subjekty, role, udělení přístupu, zapomenuté heslo, obnovu záchranným klíčem, kontrolu, že v úložišti nejsou citlivé údaje čitelně, a zobrazení na mobilu.
 - Pravidla Firestore zatím testovaná nejsou, protože emulátor nebyl v této chvíli dostupný. Syntaxi zkontroluje editor pravidel při publikování. Chování ověříme při prvním spuštění podle bodu 5.

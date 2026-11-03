@@ -1,7 +1,8 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.1.1';
-import * as C from './crypto.js?v=0.1.1';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.1.1';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.2.0';
+import * as C from './crypto.js?v=0.2.0';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.2.0';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik } from './views-fakturace.js?v=0.2.0';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -14,6 +15,8 @@ const state = {
   subjects: [],        // [{ id, meta, dek, data, access }]
   current: null,       // id vybraného subjektu
   view: 'prehled',
+  detailId: null,
+  ui: {},
   flash: null,
   idleTimer: null,
 };
@@ -32,11 +35,17 @@ const subjectName = (s) => s?.data?.nazev || s?.meta?.label || s?.id;
 function flash(msg, kind = 'ok') { state.flash = { msg, kind }; }
 
 async function audit(sid, action, detail = '') {
-  try { await state.store.addAudit(sid, { by: state.auth.email, action, detail }); } catch (e) { console.warn('audit', e); }
+  try {
+    const dek = subjectById(sid)?.dek;
+    const entry = { by: state.auth.email, action };
+    if (detail && dek) entry.enc = await C.sealJson(dek, { detail }, 'audit:' + sid);
+    else if (detail) entry.detail = '';
+    await state.store.addAudit(sid, entry);
+  } catch (e) { console.warn('audit', e); }
 }
 
 function download(filename, text, type = 'text/plain;charset=utf-8') {
-  const blob = new Blob([text], { type });
+  const blob = text instanceof Blob ? text : new Blob([text], { type });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -49,11 +58,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.1.1');
+      const { createDemoStore } = await import('./store-demo.js?v=0.2.0');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.1.1');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.2.0');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -263,8 +272,25 @@ async function saveSubjectData(s, data) {
 }
 
 // ---------------------------------------------------------------- hlavní obrazovka
+const NAV_PARENT = { faktura: 'faktury', zakaznik: 'adresar' };
+
+const ctx = {
+  state,
+  render: () => render(),
+  flash: (m, k) => flash(m, k),
+  toast: (m, k) => toast(m, k),
+  audit: (sid, a, d) => audit(sid, a, d),
+  download: (n, b) => download(n, b),
+  needSubject: (main) => needSubject(main),
+  subjectName: (x) => subjectName(x),
+  myRole: (x) => myRole(x),
+  go: (view, id = null) => { state.view = view; state.detailId = id; render(); window.scrollTo(0, 0); },
+};
+
 const NAV = [
   ['prehled', 'Přehled'],
+  ['faktury', 'Faktury'],
+  ['adresar', 'Adresář'],
   ['subjekt', 'Údaje subjektu'],
   ['clenove', 'Členové a přístup'],
   ['klice', 'Záchranný klíč a záloha'],
@@ -287,15 +313,15 @@ function renderMain(root) {
     <button id="btn-out">Odhlásit</button>
   </header>
   <div class="layout">
-    <nav class="side">${nav.map(([k, l]) => `<button data-view="${k}" class="${state.view === k ? 'active' : ''}">${l}</button>`).join('')}</nav>
+    <nav class="side">${nav.map(([k, l]) => `<button data-view="${k}" class="${(NAV_PARENT[state.view] || state.view) === k ? 'active' : ''}">${l}</button>`).join('')}</nav>
     <main id="main">${flashHtml()}</main>
   </div>`;
   root.querySelector('#sel-subject').onchange = (e) => { state.current = e.target.value; render(); };
   root.querySelector('#btn-lock').onclick = () => lock('Aplikace je zamčená.');
   root.querySelector('#btn-out').onclick = () => state.store.signOut();
-  root.querySelectorAll('nav.side button').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; render(); }));
+  root.querySelectorAll('nav.side button').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; state.detailId = null; render(); }));
   const main = root.querySelector('#main');
-  const views = { prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
+  const views = { faktury: (m) => viewFaktury(m, ctx), faktura: (m) => viewFaktura(m, ctx), adresar: (m) => viewAdresar(m, ctx), zakaznik: (m) => viewZakaznik(m, ctx), prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
   (views[state.view] || viewPrehled)(main).catch((e) => { console.error(e); main.insertAdjacentHTML('beforeend', `<p class="err">${esc(e.message)}</p>`); });
 }
 
@@ -342,7 +368,7 @@ async function viewPrehled(main) {
       <td>${warns.length ? warns.map((w) => `<span class="pill warn">${esc(w)}</span>`).join(' ') : '<span class="pill ok">v pořádku</span>'}</td></tr>`;
   }).join('');
   main.insertAdjacentHTML('beforeend', `<h1>Přehled</h1>
-    <p class="muted">Etapa 0: subjekty, uživatelé, šifrování a záchranné klíče. Faktury přibudou v etapě 1.</p>
+    <p class="muted">Faktury a adresář najdete v levém menu. Subjekt přepnete nahoře.</p>
     <table class="grid"><thead><tr><th>Subjekt</th><th>IČO</th><th>Moje role</th><th>Členů</th><th>Stav</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="5">Zatím žádný subjekt.' + (isAdmin() ? ' Založte ho v sekci „Nový subjekt“.' : '') + '</td></tr>'}</tbody></table>`);
   main.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => { state.current = b.dataset.open; state.view = cur().access === 'ok' ? 'subjekt' : 'prehled'; if (cur().access !== 'ok') { render(); const m = document.getElementById('main'); m.insertAdjacentHTML('beforeend', accessBox(cur())); bindAccessBox(m, cur()); } else render(); }));
@@ -389,7 +415,13 @@ async function viewSubjekt(main) {
         <label>Splatnost (dní)<input name="splatnost" type="number" min="0" max="120" value="${esc(d.splatnost ?? 14)}"></label>
       </div>
       <p class="muted small">{RRRR} = rok, {NNNN} = pořadové číslo. Pokračování řad z vyfakturuj.cz se nastaví při migraci (etapa 2).</p>
-      <label>Text v patičce faktury<input name="paticka" value="${esc(d.paticka)}"></label>
+      <label>Text v patičce faktury<input name="paticka" value="${esc(d.paticka)}" placeholder="Vystaveno v systému ARTUR"></label>
+      <label>Výchozí úvodní text faktury<input name="uvodText" value="${esc(d.uvodText)}" placeholder="např. Na základě uzavřené smlouvy Vám fakturujeme následující služby:"></label>
+      <div class="row">
+        <label>Řada zálohových faktur<input name="radaZal" value="${esc(d.radaZal || 'ZF{RRRR}{NNNN}')}"></label>
+        <label>Řada opravných dokladů<input name="radaOpr" value="${esc(d.radaOpr || 'OD{RRRR}{NNNN}')}"></label>
+      </div>
+      <label>Poslední číslo faktury vystavené mimo ARTUR v roce ${new Date().getFullYear()} (pořadí, např. 63 pro ${new Date().getFullYear()}0063)<input name="posledniCislo" type="number" min="0" value="${esc((d.posledniCislo || {})['faktura:' + new Date().getFullYear()] ?? '')}"></label>
       <label class="inline"><input type="checkbox" name="exportMoney" ${d.exportMoney ? 'checked' : ''}> Exportovat do Money S3</label>
       <p class="muted small">DPH: neplátce (text „Nejsem plátce DPH“ na faktuře).</p>
       </fieldset>
@@ -431,7 +463,9 @@ async function viewSubjekt(main) {
       ...(s.data || {}),
       nazev: f.get('nazev').trim(), ico, dic: f.get('dic').trim(), ulice: f.get('ulice').trim(), psc: f.get('psc').trim(), obec: f.get('obec').trim(),
       zapis: f.get('zapis').trim(), email: f.get('email').trim(), telefon: f.get('telefon').trim(), web: f.get('web').trim(),
-      ucty, rada: f.get('rada').trim() || '{RRRR}{NNNN}', splatnost: Number(f.get('splatnost') || 14), paticka: f.get('paticka').trim(),
+      ucty, rada: f.get('rada').trim() || '{RRRR}{NNNN}', splatnost: Number(f.get('splatnost') || 14), paticka: f.get('paticka').trim(), uvodText: f.get('uvodText').trim(),
+      radaZal: f.get('radaZal').trim() || 'ZF{RRRR}{NNNN}', radaOpr: f.get('radaOpr').trim() || 'OD{RRRR}{NNNN}',
+      posledniCislo: { ...((s.data || {}).posledniCislo || {}), ['faktura:' + new Date().getFullYear()]: Number(f.get('posledniCislo') || 0) },
       exportMoney: f.get('exportMoney') === 'on', platceDph: false,
     };
     busy(form, 'Ukládám…');
@@ -647,7 +681,8 @@ async function recoverDialog(s) {
 async function viewHistorie(main) {
   const s = needSubject(main, { needAccess: false }); if (!s) return;
   const rows = await state.store.listAudit(s.id, 100);
-  const L = { 'subjekt.zalozen': 'Subjekt založen', 'subjekt.aktivovan': 'Založení dokončeno, vytvořen klíč', 'subjekt.upraven': 'Údaje subjektu upraveny', 'clen.pridan': 'Člen přidán', 'clen.odebran': 'Člen odebrán', 'clen.role': 'Změna role', 'pristup.udelen': 'Přístup udělen', 'klic.potvrzen': 'Záchranný klíč potvrzen', 'klic.obnoven': 'Přístup obnoven záchranným klíčem', 'zaloha.stazena': 'Záloha stažena' };
+  for (const r of rows) if (r.enc && s.dek) { try { r.detail = (await C.openJson(s.dek, r.enc, 'audit:' + s.id)).detail; } catch { r.detail = '?'; } }
+  const L = { 'subjekt.zalozen': 'Subjekt založen', 'subjekt.aktivovan': 'Založení dokončeno, vytvořen klíč', 'subjekt.upraven': 'Údaje subjektu upraveny', 'clen.pridan': 'Člen přidán', 'clen.odebran': 'Člen odebrán', 'clen.role': 'Změna role', 'pristup.udelen': 'Přístup udělen', 'klic.potvrzen': 'Záchranný klíč potvrzen', 'klic.obnoven': 'Přístup obnoven záchranným klíčem', 'zaloha.stazena': 'Záloha stažena', 'zakaznik.zalozen': 'Zákazník založen', 'zakaznik.upraven': 'Zákazník upraven', 'faktura.vystavena': 'Faktura vystavena', 'faktura.uhrada': 'Úhrada zaznamenána', 'faktura.uhrada-zrusena': 'Úhrada zrušena', 'faktura.stornovana': 'Faktura stornována', 'faktura.koncept-zahozen': 'Koncept zahozen' };
   main.insertAdjacentHTML('beforeend', `<h1>Historie změn – ${esc(subjectName(s))}</h1>
     <table class="grid"><thead><tr><th>Kdy</th><th>Kdo</th><th>Co</th><th>Detail</th></tr></thead><tbody>
     ${rows.map((r) => `<tr><td>${esc(fmtDate(r.at))}</td><td>${esc(r.by)}</td><td>${esc(L[r.action] || r.action)}</td><td>${esc(r.detail)}</td></tr>`).join('') || '<tr><td colspan="4">Žádné záznamy.</td></tr>'}

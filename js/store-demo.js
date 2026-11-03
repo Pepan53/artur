@@ -1,6 +1,6 @@
 // ARTUR – demo úložiště v localStorage. Slouží k vyzkoušení a testům bez Firebase.
 // Napodobuje pravidla z firestore.rules, aby se chyby v oprávněních projevily i v demu.
-import { ADMIN_EMAILS } from './config.js?v=0.1.1';
+import { ADMIN_EMAILS } from './config.js?v=0.2.0';
 
 const KEY = 'artur-demo-db';
 const SESSION = 'artur-demo-user';

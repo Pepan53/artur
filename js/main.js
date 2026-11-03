@@ -1,4 +1,4 @@
-import { start } from './app.js?v=0.1.1';
+import { start } from './app.js?v=0.2.0';
 
 start().catch((e) => {
   console.error(e);

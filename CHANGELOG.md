@@ -3,6 +3,14 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.2.0 (2026-11-03)
+- Etapa 1: adresář zákazníků (ARES, e-maily, splatnost, známé účty, archivace, kontrola duplicitního IČO).
+- Faktury: koncept → vystavení, číselné řady (faktura, zálohová, opravný doklad), navázání na poslední číslo z vyfakturuj.cz.
+- PDF faktury s QR Platbou (SPD), české písmo, náhled a stažení.
+- Ruční úhrady včetně částečných, stavy, filtr neuhrazených a po splatnosti, součty.
+- Duplikace faktury, storno opravným dokladem, historie každého dokladu.
+- Podrobnosti v historii změn jsou nově šifrované.
+
 ## 0.1.1 (2026-11-03)
 - Zamykání po nečinnosti prodlouženo na 60 minut.
 - Verzování: číslo verze v aplikaci, tento přehled změn, upozornění „Je k dispozici nová verze“.
