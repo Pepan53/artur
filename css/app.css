@@ -70,6 +70,8 @@ fieldset { border: 0; padding: 0; margin: 0; display: contents; }
 .layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 100px); }
 .side { display: flex; flex-direction: column; padding: 16px 10px; gap: 2px; border-right: 1px solid var(--line); }
 .side button { border: 0; background: none; text-align: left; padding: 8px 12px; border-radius: 6px; }
+.side .nav-group { margin-top: 10px; font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--muted, #5d6b7a); display: flex; justify-content: space-between; }
+.side button.sub { padding-left: 24px; font-size: 14px; }
 .side button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 main { padding: 24px 32px; max-width: 1180px; min-width: 0; overflow-x: auto; }
 

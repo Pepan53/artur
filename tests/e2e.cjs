@@ -11,7 +11,7 @@ let dialogAnswers = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('dialog', async (d) => { const a = dialogAnswers.shift(); if (d.type() === 'prompt') await d.accept(a ?? ''); else await d.accept(); });
   const step = (s) => console.log('▶', s);
-  const nav = async (label) => { await page.click(`nav.side button:has-text("${label}")`); await page.waitForTimeout(150); };
+  const nav = async (label) => { if (!(await page.isVisible(`nav.side button:has-text(\"${label}\")`))) await page.click('#nav-nastaveni'); await page.click(`nav.side button:has-text(\"${label}\")`); await page.waitForTimeout(150); };
   const login = async (email) => { await page.fill('input[name=email]', email); await page.click('button:has-text("Přihlásit")'); await page.waitForTimeout(300); };
   const logout = async () => { await page.click('#btn-out'); await page.waitForSelector('#f-login'); };
   const setPw = async (pw) => { await page.fill('input[name=p1]', pw); await page.fill('input[name=p2]', pw); await page.click('button.primary'); await page.waitForSelector('header.top', { timeout: 15000 }); };

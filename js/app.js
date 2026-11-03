@@ -1,11 +1,11 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.2';
-import * as C from './crypto.js?v=0.5.2';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.2';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.2';
-import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.2';
-import { viewBanka } from './views-banka.js?v=0.5.2';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.2';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.3';
+import * as C from './crypto.js?v=0.5.3';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.3';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.3';
+import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.3';
+import { viewBanka } from './views-banka.js?v=0.5.3';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.3';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -61,11 +61,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.5.2');
+      const { createDemoStore } = await import('./store-demo.js?v=0.5.3');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.2');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.3');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -297,18 +297,27 @@ const NAV = [
   ['sablony', 'Opakované faktury'],
   ['banka', 'Banka a úhrady'],
   ['adresar', 'Adresář'],
-  ['import', 'Import z vyfakturuj.cz'],
   ['subjekt', 'Údaje subjektu'],
+  ['historie', 'Historie změn'],
+];
+const NAV_NASTAVENI = [
+  ['import', 'Import z vyfakturuj.cz'],
   ['clenove', 'Členové a přístup'],
   ['klice', 'Záchranný klíč a záloha'],
-  ['historie', 'Historie změn'],
+  ['admin-uzivatele', 'Uživatelé aplikace', 'admin'],
   ['ucet', 'Můj účet'],
+  ['admin-novy', 'Nový subjekt', 'admin'],
 ];
 
 function renderMain(root) {
   const s = cur();
-  const nav = [...NAV];
-  if (isAdmin()) nav.push(['admin-uzivatele', 'Uživatelé aplikace'], ['admin-novy', 'Nový subjekt']);
+  const aktivni = NAV_PARENT[state.view] || state.view;
+  const nastaveni = NAV_NASTAVENI.filter(([, , a]) => !a || isAdmin());
+  if (nastaveni.some(([k]) => k === aktivni)) state.navNastaveni = true;
+  const navBtn = ([k, l], cls = '') => `<button data-view="${k}" class="${cls} ${aktivni === k ? 'active' : ''}">${l}</button>`;
+  const navHtml = NAV.map((x) => navBtn(x)).join('')
+    + `<button id="nav-nastaveni" class="nav-group ${state.navNastaveni ? 'open' : ''}" aria-expanded="${!!state.navNastaveni}">NASTAVENÍ <span class="caret">${state.navNastaveni ? '▾' : '▸'}</span></button>`
+    + (state.navNastaveni ? nastaveni.map((x) => navBtn(x, 'sub')).join('') : '');
   root.innerHTML = `
   <header class="top">
     <div class="brand small"><span class="logo">A</span><strong>ARTUR</strong></div>
@@ -320,13 +329,14 @@ function renderMain(root) {
     <button id="btn-out">Odhlásit</button>
   </header>
   <div class="layout">
-    <nav class="side">${nav.map(([k, l]) => `<button data-view="${k}" class="${(NAV_PARENT[state.view] || state.view) === k ? 'active' : ''}">${l}</button>`).join('')}</nav>
+    <nav class="side">${navHtml}</nav>
     <main id="main">${flashHtml()}</main>
   </div>`;
   root.querySelector('#sel-subject').onchange = (e) => { state.current = e.target.value; render(); };
   root.querySelector('#btn-lock').onclick = () => lock('Aplikace je zamčená.');
   root.querySelector('#btn-out').onclick = () => state.store.signOut();
-  root.querySelectorAll('nav.side button').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; state.detailId = null; render(); }));
+  root.querySelectorAll('nav.side button[data-view]').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; state.detailId = null; render(); }));
+  root.querySelector('#nav-nastaveni').onclick = () => { state.navNastaveni = !state.navNastaveni; render(); };
   const main = root.querySelector('#main');
   const views = { faktury: (m) => viewFaktury(m, ctx), faktura: (m) => viewFaktura(m, ctx), adresar: (m) => viewAdresar(m, ctx), zakaznik: (m) => viewZakaznik(m, ctx), import: (m) => viewImport(m, ctx), mesic: (m) => viewMesic(m, ctx), banka: (m) => viewBanka(m, ctx), sablony: (m) => viewSablony(m, ctx), sablona: (m) => viewSablona(m, ctx), prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
   const BEZ_FAKTUR = ['faktury', 'faktura', 'import', 'mesic', 'sablony', 'sablona', 'banka'];
@@ -382,7 +392,7 @@ async function viewPrehled(main) {
   main.insertAdjacentHTML('beforeend', `<h1>Přehled</h1>
     <p class="muted">Faktury a adresář najdete v levém menu. Subjekt přepnete nahoře.</p>
     <table class="grid"><thead><tr><th>Subjekt</th><th>IČO</th><th>Moje role</th><th>Členů</th><th>Stav</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="5">Zatím žádný subjekt.' + (isAdmin() ? ' Založte ho v sekci „Nový subjekt“.' : '') + '</td></tr>'}</tbody></table>`);
+    <tbody>${rows || '<tr><td colspan="5">Zatím žádný subjekt.' + (isAdmin() ? ' Založte ho v sekci Nastavení → „Nový subjekt“.' : '') + '</td></tr>'}</tbody></table>`);
   main.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => { state.current = b.dataset.open; state.view = cur().access === 'ok' ? 'subjekt' : 'prehled'; if (cur().access !== 'ok') { render(); const m = document.getElementById('main'); m.insertAdjacentHTML('beforeend', accessBox(cur())); bindAccessBox(m, cur()); } else render(); }));
 }
 
@@ -544,7 +554,7 @@ async function viewClenove(main) {
       <select name="role">${ROLES.map((x) => `<option value="${x}" ${x === 'ucetni' ? 'selected' : ''}>${ROLE_LABEL[x]}</option>`).join('')}</select>
       <button class="primary">Přidat</button>
     </form>
-    <p class="muted small">E-mail musí být zároveň v seznamu „Uživatelé aplikace“ u administrátora, jinak se člen nepřihlásí.</p>` : ''}`);
+    <p class="muted small">E-mail musí být zároveň v seznamu Nastavení → „Uživatelé aplikace“ u administrátora, jinak se člen nepřihlásí.</p>` : ''}`);
   if (!owner) return;
   main.querySelectorAll('[data-grant]').forEach((b) => (b.onclick = async () => {
     const e = b.dataset.grant; const u = stats[e].user;

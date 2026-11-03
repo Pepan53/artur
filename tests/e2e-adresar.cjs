@@ -8,7 +8,7 @@ const DIR = process.env.MIG || '/tmp/mig';
   const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   const ok = (c, m) => { if (!c) throw new Error('SELHALO: ' + m); console.log('  ✓', m); };
-  const nav = async (l) => { await page.click(`nav.side button:has-text("${l}")`); await page.waitForTimeout(300); };
+  const nav = async (l) => { if (!(await page.isVisible(`nav.side button:has-text(\"${l}\")`))) await page.click('#nav-nastaveni'); await page.click(`nav.side button:has-text(\"${l}\")`); await page.waitForTimeout(300); };
   const text = () => page.textContent('#app');
   const login = async (e) => { await page.fill('input[name=email]', e); await page.click('button:has-text("Přihlásit")'); await page.waitForTimeout(300); };
   const setPw = async (pw) => { await page.fill('input[name=p1]', pw); await page.fill('input[name=p2]', pw); await page.click('button.primary'); await page.waitForSelector('header.top'); };

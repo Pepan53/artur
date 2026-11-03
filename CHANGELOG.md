@@ -3,6 +3,9 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.5.3 (2026-11-03)
+- Nová rozbalovací sekce menu NASTAVENÍ: Import z vyfakturuj.cz, Členové a přístup, Záchranný klíč a záloha, Uživatelé aplikace, Můj účet, Nový subjekt (poslední dvě admin položky jen pro admina).
+
 ## 0.5.2 (2026-11-03)
 - Odesílání faktur e-mailem přes Gmail je zapnuté (nastaven OAuth klient projektu artur-postme).
 
