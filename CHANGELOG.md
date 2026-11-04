@@ -3,6 +3,9 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.5.8 (2026-11-04)
+- Banka a úhrady: kromě GPC lze nahrát i výpis z RB v PDF. Čte se přímo v prohlížeči (pdf.js), kontrolují se obraty a zůstatky; tentýž výpis nahraný jednou jako PDF a jednou jako GPC se nezdvojí.
+
 ## 0.5.7 (2026-11-04)
 - Přehled: sloupec „Výchozí“ – faktury zaškrtnutého subjektu se otevřou hned po přihlášení (volba se pamatuje u uživatele, platí na všech zařízeních).
 

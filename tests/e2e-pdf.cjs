@@ -1,0 +1,38 @@
+// E2E (demo): výpis RB v PDF → párování; tentýž výpis v GPC už nic nezdvojí.
+const { chromium } = require('playwright');
+const URL = process.env.URL || 'http://localhost:8765/index.html?demo=1';
+const MIG = process.env.MIG || '/tmp/mig'; const GPC = process.env.GPC || '/tmp/gpc';
+const fs = require('fs');
+(async () => {
+  const browser = await chromium.launch();
+  const page = await (await browser.newContext({ viewport: { width: 1300, height: 900 } })).newPage();
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('dialog', (d) => d.accept());
+  const ok = (c, m) => { if (!c) throw new Error('SELHALO: ' + m); console.log('  ✓', m); };
+  const nav = async (l) => { if (!(await page.isVisible(`nav.side button:has-text(\"${l}\")`))) await page.click('#nav-nastaveni'); await page.click(`nav.side button:has-text(\"${l}\")`); await page.waitForTimeout(400); };
+  const text = () => page.textContent('#app');
+  await page.goto(URL);
+  await page.fill('input[name=email]', 'josef.dvorak@postme.cz'); await page.click('button:has-text("Přihlásit")'); await page.waitForTimeout(300);
+  await page.fill('input[name=p1]', 'Josef-heslo-2026!'); await page.fill('input[name=p2]', 'Josef-heslo-2026!'); await page.click('button.primary'); await page.waitForSelector('header.top');
+  if (!(await page.isVisible('nav.side button:has-text("Nový subjekt")'))) await page.click('#nav-nastaveni'); await page.click('nav.side button:has-text("Nový subjekt")'); await page.fill('#f-new input[name=ico]', '09474595'); await page.fill('#f-new input[name=label]', 'POSTME s.r.o.'); await page.click('#f-new button.primary'); await page.waitForTimeout(400);
+  await page.fill('input[name=acc_cislo]', '732627175/5500'); await page.click('#f-subj button.primary');
+  await page.waitForSelector('#rk-code'); const k = (await page.textContent('#rk-code')).trim().split('-');
+  await page.fill('input[name=g1]', k[1]); await page.fill('input[name=g2]', k[k.length - 2]); await page.click('button:has-text("Potvrzuji")'); await page.waitForTimeout(300);
+  await nav('Import z vyfakturuj.cz'); await page.setInputFiles('#file', MIG + '/postme.json'); await page.waitForTimeout(800);
+  await page.click('#btn-import'); await page.waitForSelector('text=Import hotov', { timeout: 120000 });
+  console.log('▶ Výpis 3/2026 v PDF');
+  await nav('Banka a úhrady');
+  await page.setInputFiles('#gpc', MIG + '/vypis-2026-03.pdf'); await page.waitForSelector('#gpc-prev table', { timeout: 30000 }); await page.waitForTimeout(500);
+  const t = await text();
+  ok(t.includes('obraty a zůstatky sedí'), 'PDF: obraty a zůstatky sedí');
+  ok(t.includes('Nových pohybů: 34'), 'PDF: 34 pohybů');
+  const auto = Number(t.match(/Spárováno automaticky podle VS: (\d+)/)[1]);
+  ok(auto >= 20, `PDF: spárováno automaticky ${auto}`);
+  await page.screenshot({ path: '/tmp/shots/60-pdf.png', fullPage: true });
+  await page.click('#btn-ulozit'); await page.waitForSelector('text=Výpisy uloženy', { timeout: 60000 });
+  console.log('▶ Tentýž výpis jako GPC');
+  await page.setInputFiles('#gpc', MIG + '/vypis-2026-03.gpc'); await page.waitForTimeout(1500);
+  ok((await text()).includes('Žádné nové pohyby'), 'GPC po PDF nic nezdvojí');
+  ok(errors.length === 0, 'žádné chyby v konzoli ' + errors.join(' | '));
+  await browser.close(); console.log('\nE2E PDF OK');
+})().catch((e) => { console.error(e); process.exit(1); });

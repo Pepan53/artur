@@ -1,8 +1,9 @@
 // ARTUR – etapa 4: výpisy z banky (GPC) a párování úhrad.
-import * as C from './crypto.js?v=0.5.7';
-import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.7';
-import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.7';
-import { esc, loadDocs, canWrite, saveZak } from './views-fakturace.js?v=0.5.7';
+import * as C from './crypto.js?v=0.5.8';
+import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.8';
+import { parsePdfVypis } from './pdfvypis.js?v=0.5.8';
+import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.8';
+import { esc, loadDocs, canWrite, saveZak } from './views-fakturace.js?v=0.5.8';
 
 const ucetBezBanky = (c) => String(c || '').split('/')[0].replace(/^0+/, '');
 
@@ -49,9 +50,9 @@ export async function viewBanka(main, ctx) {
   for (const [k, cisla] of Object.entries(byAcc)) { const mx = Math.max(...cisla); for (let i = 1; i <= mx; i++) if (!cisla.includes(i)) chybejici.push(`${k.replace(':', ' / ')} č. ${i}`); }
   main.insertAdjacentHTML('beforeend', `
     <h1>Banka a úhrady – ${esc(ctx.subjectName(s))}</h1>
-    ${rw ? `<section class="box"><h2>Nahrát výpisy GPC</h2>
-      <p class="muted">Výpisy z internetového bankovnictví RB ve formátu GPC (ABO). Můžete vybrat více souborů najednou. Stejný výpis nahraný znovu nic nezdvojí.</p>
-      <input type="file" id="gpc" accept=".gpc,.GPC" multiple>
+    ${rw ? `<section class="box"><h2>Nahrát výpisy</h2>
+      <p class="muted">Výpisy z internetového bankovnictví RB ve formátu GPC (ABO) nebo PDF. Můžete vybrat více souborů najednou. Stejný výpis nahraný znovu – i jednou jako GPC a podruhé jako PDF – nic nezdvojí. PDF se čte přímo v prohlížeči, nikam se neposílá.</p>
+      <input type="file" id="gpc" accept=".gpc,.GPC,.pdf,.PDF,application/pdf" multiple>
       <div id="gpc-prev"></div></section>` : ''}
     ${navrhy.length ? `<section class="box warn"><h2>Ke kontrole (${navrhy.length})</h2>
       <table class="grid"><thead><tr><th>Datum</th><th class="num">Částka</th><th>VS / účet</th><th>Navržená faktura</th><th>Proč</th><th></th></tr></thead><tbody>
@@ -81,7 +82,12 @@ export async function viewBanka(main, ctx) {
     const files = [...e.target.files]; if (!files.length) return;
     const vys = [];
     for (const file of files) {
-      try { for (const v of parseGpc(await file.arrayBuffer())) vys.push({ ...v, soubor: file.name }); } catch (err) { return ctx.toast(`${file.name}: ${err.message}`, 'err'); }
+      try {
+        const buf = await file.arrayBuffer();
+        const jePdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+        if (jePdf) prev.innerHTML = `<p class="muted">Čtu ${esc(file.name)}…</p>`;
+        for (const v of (jePdf ? await parsePdfVypis(buf) : parseGpc(buf))) vys.push({ ...v, soubor: file.name });
+      } catch (err) { prev.innerHTML = ''; return ctx.toast(`${file.name}: ${err.message}`, 'err'); }
     }
     const cizi = vys.filter((v) => !ucty.includes(v.ucet));
     if (cizi.length) return ctx.toast(`Výpis účtu ${cizi[0].ucet} nepatří k subjektu ${ctx.subjectName(s)} (účty subjektu: ${ucty.join(', ') || 'žádné – doplňte v Údajích subjektu'}).`, 'err');
