@@ -174,3 +174,6 @@ option.shoda { font-weight: 600; }
   .top .switch { order: 4; flex: 1 1 100%; }
   #btn-lock { margin-left: auto; }
 }
+
+.grid th.center, .grid td.center { text-align: center; }
+.chk-vychozi { width: 18px; height: 18px; cursor: pointer; }

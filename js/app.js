@@ -1,12 +1,12 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.6';
-import { currentTheme, toggleTheme } from './theme.js?v=0.5.6';
-import * as C from './crypto.js?v=0.5.6';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.6';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.6';
-import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.6';
-import { viewBanka } from './views-banka.js?v=0.5.6';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.6';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.7';
+import { currentTheme, toggleTheme } from './theme.js?v=0.5.7';
+import * as C from './crypto.js?v=0.5.7';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.7';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.7';
+import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.7';
+import { viewBanka } from './views-banka.js?v=0.5.7';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.7';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -62,11 +62,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.5.6');
+      const { createDemoStore } = await import('./store-demo.js?v=0.5.7');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.6');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.7');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -109,7 +109,7 @@ function lock(msg) {
 
 async function onAuthChange(auth) {
   state.auth = auth ? { email: lower(auth.email), name: auth.name } : null;
-  state.user = null; state.privateKey = null; state.subjects = []; state.current = null;
+  state.user = null; state.privateKey = null; state.subjects = []; state.current = null; state.vychoziHotovo = false;
   if (!auth) return render();
   if (!auth.verified) { state.denied = 'E-mail účtu není ověřený.'; return render(); }
   const ok = ADMIN_EMAILS.includes(state.auth.email) || (await state.store.isAllowed(state.auth.email));
@@ -229,6 +229,7 @@ function renderUnlock(root) {
       state.privateKey = await C.unlockUserKeys(state.user, new FormData(e.target).get('pw'));
     } catch (err) { flash(err.message, 'err'); return render(); }
     await loadSubjects();
+    otevriVychozi();
     resetIdle();
     render();
   };
@@ -263,6 +264,14 @@ async function loadSubjects() {
   out.sort((a, b) => subjectName(a).localeCompare(subjectName(b), 'cs'));
   state.subjects = out;
   if (!subjectById(state.current)) state.current = out.find((s) => s.access === 'ok')?.id || out[0]?.id || null;
+}
+
+/** Po přihlášení otevře faktury výchozího subjektu (jen poprvé v relaci, ne po zamčení). */
+function otevriVychozi() {
+  if (state.vychoziHotovo) return;
+  state.vychoziHotovo = true;
+  const v = subjectById(state.user?.vychoziSubjekt);
+  if (v && v.access === 'ok' && v.meta?.druh !== 'adresar') { state.current = v.id; state.view = 'faktury'; state.detailId = null; }
 }
 
 async function reloadSubject(sid) {
@@ -390,12 +399,22 @@ async function viewPrehled(main) {
     return `<tr><td><button class="link" data-open="${esc(s.id)}">${esc(subjectName(s))}</button></td>
       <td>${esc(s.data?.ico || s.meta.icoHint || '')}</td><td>${ROLE_LABEL[role] || ''}</td>
       <td>${Object.keys(s.meta.members).length}</td>
+      <td class="center">${s.meta?.druh === 'adresar' ? '' : `<input type="checkbox" class="chk-vychozi" data-vychozi="${esc(s.id)}" ${state.user?.vychoziSubjekt === s.id ? 'checked' : ''} ${s.access !== 'ok' ? 'disabled' : ''} title="Po přihlášení otevřít faktury tohoto subjektu" aria-label="Výchozí subjekt ${esc(subjectName(s))}">`}</td>
       <td>${warns.length ? warns.map((w) => `<span class="pill warn">${esc(w)}</span>`).join(' ') : '<span class="pill ok">v pořádku</span>'}</td></tr>`;
   }).join('');
   main.insertAdjacentHTML('beforeend', `<h1>Přehled</h1>
-    <p class="muted">Faktury a adresář najdete v menu. Subjekt přepnete nahoře.</p>
-    <table class="grid"><thead><tr><th>Subjekt</th><th>IČO</th><th>Moje role</th><th>Členů</th><th>Stav</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="5">Zatím žádný subjekt.' + (isAdmin() ? ' Založte ho v sekci Nastavení → „Nový subjekt“.' : '') + '</td></tr>'}</tbody></table>`);
+    <p class="muted">Faktury a adresář najdete v menu. Subjekt přepnete nahoře. Zaškrtnutím ve sloupci „Výchozí“ zvolíte subjekt, jehož faktury se otevřou hned po přihlášení.</p>
+    <table class="grid"><thead><tr><th>Subjekt</th><th>IČO</th><th>Moje role</th><th>Členů</th><th class="center" title="Po přihlášení se rovnou otevřou faktury zaškrtnutého subjektu">Výchozí</th><th>Stav</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="6">Zatím žádný subjekt.' + (isAdmin() ? ' Založte ho v sekci Nastavení → „Nový subjekt“.' : '') + '</td></tr>'}</tbody></table>`);
+  main.querySelectorAll('[data-vychozi]').forEach((c) => (c.onchange = async () => {
+    const sid = c.checked ? c.dataset.vychozi : null;
+    main.querySelectorAll('[data-vychozi]').forEach((x) => { if (x !== c) x.checked = false; });
+    try {
+      await state.store.putUser(state.auth.email, { vychoziSubjekt: sid });
+      state.user = { ...state.user, vychoziSubjekt: sid };
+      toast(sid ? `Po přihlášení se otevřou faktury: ${subjectName(subjectById(sid))}.` : 'Výchozí subjekt zrušen – po přihlášení se otevře Přehled.');
+    } catch (e) { c.checked = !c.checked; toast('Uložení se nepovedlo: ' + e.message, 'err'); }
+  }));
   main.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => { state.current = b.dataset.open; state.view = cur().access === 'ok' ? 'subjekt' : 'prehled'; if (cur().access !== 'ok') { render(); const m = document.getElementById('main'); m.insertAdjacentHTML('beforeend', accessBox(cur())); bindAccessBox(m, cur()); } else render(); }));
 }
 
