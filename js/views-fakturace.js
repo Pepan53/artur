@@ -1,8 +1,8 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.5.8';
-import { aresLookup, icoValid } from './czech.js?v=0.5.8';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.8';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.8';
+import * as C from './crypto.js?v=0.5.9';
+import { aresLookup, icoValid } from './czech.js?v=0.5.9';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.9';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.9';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -26,6 +26,15 @@ async function loadOwn(ctx, s) {
   }
   return { zak: zak.sort((a, b) => (a.nazev || '').localeCompare(b.nazev || '', 'cs')), fa, sab, bank, vyp };
 }
+
+/** Výpis, ze kterého pohyb pochází (u starších pohybů dohledá podle účtu a období). */
+export function vypisInfo(s, t) {
+  if (!t) return null;
+  if (t.vypis) return t.vypis;
+  const v = (s.vypisy || []).find((x) => x.ucet === t.ucet && (x.datumOd || x.datumPredchozi || '') <= t.datum && t.datum <= x.datum);
+  return v ? { id: v.id, cislo: v.cislo, rok: v.datum.slice(0, 4), format: v.format || (/\.pdf$/i.test(v.soubor || '') ? 'PDF' : 'GPC') } : null;
+}
+export const vypisText = (vi) => (vi ? `výpis č. ${vi.cislo}/${vi.rok} (${vi.format})` : '');
 
 export async function loadDocs(ctx, s, force = false) {
   const A = jeAdresar(s) ? null : sdilenyAdresar(ctx);
@@ -408,7 +417,7 @@ function detail(main, ctx, s, f) {
       ${(f.polozky || []).map((p) => `<tr><td>${esc(p.popis)}</td><td class="num">${esc(p.mnozstvi)} ${esc(p.jednotka)}</td><td class="num">${czk(p.cena)}</td><td class="num">${czk(radkaCelkem(p))}</td></tr>`).join('')}
     </tbody></table>
     ${f.uhrady?.length ? `<h2>Úhrady</h2><table class="grid"><thead><tr><th>Datum</th><th class="num">Částka</th><th>Zdroj</th><th></th></tr></thead><tbody>
-      ${f.uhrady.map((u, i) => `<tr><td>${datum(u.datum)}</td><td class="num">${czk(u.castka)}</td><td>${esc(u.zdroj === 'rucne' ? 'ručně' : u.zdroj)}${u.pozn ? ' – ' + esc(u.pozn) : ''} <span class="muted small">(${esc(u.by || '')})</span></td><td>${rw && u.zdroj === 'rucne' ? `<button class="small danger" data-unpay="${i}">Zrušit</button>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${f.uhrady.map((u, i) => `<tr><td>${datum(u.datum)}</td><td class="num">${czk(u.castka)}</td><td>${esc(u.zdroj === 'rucne' ? 'ručně' : u.zdroj)}${u.txId ? (() => { const t = (s.banka || []).find((x) => x.id === u.txId); const vt = vypisText(u.vypis || vypisInfo(s, t)); return ` · <button class="link" data-tx="${esc(u.txId)}">${esc(vt || 'pohyb na účtu')}</button>`; })() : ''}${u.pozn ? ' – ' + esc(u.pozn) : ''} <span class="muted small">(${esc(u.by || '')})</span></td><td>${rw && u.zdroj === 'rucne' ? `<button class="small danger" data-unpay="${i}">Zrušit</button>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}
     ${f.interni ? `<p class="muted">Interní poznámka: ${esc(f.interni)}</p>` : ''}
     <h2>Historie</h2>
     <ul class="hist">${(f.historie || []).map((h) => `<li>${esc(new Date(h.at).toLocaleString('cs-CZ'))} – ${esc(h.akce)} <span class="muted">(${esc(h.by)})</span></li>`).join('')}</ul>`);
@@ -429,6 +438,7 @@ function detail(main, ctx, s, f) {
     await saveDoc(ctx, s, 'fa', f); await ctx.audit(s.id, 'faktura.uhrada', `${f.cislo}: ${czk(castka)}`);
     await loadDocs(ctx, s, true); ctx.flash(`Úhrada zaznamenána. Stav: ${STAVY[f.stav]}.`); ctx.go('faktura', f.id);
   };
+  main.querySelectorAll('[data-tx]').forEach((b) => (b.onclick = () => { ctx.state.zpetNaFakturu = f.id; ctx.go('banka', b.dataset.tx); }));
   main.querySelectorAll('[data-unpay]').forEach((b) => (b.onclick = async () => {
     const u = f.uhrady[Number(b.dataset.unpay)];
     if (!confirm(`Zrušit úhradu ${czk(u.castka)} z ${datum(u.datum)}?`)) return;
@@ -439,7 +449,7 @@ function detail(main, ctx, s, f) {
     await loadDocs(ctx, s, true); ctx.go('faktura', f.id);
   }));
   const mb = main.querySelector('#btn-mail');
-  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.5.8'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
+  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.5.9'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
   const eb = main.querySelector('#btn-edit-prev');
   if (eb) eb.onclick = () => editPrevzata(main.querySelector('#edit-box'), ctx, s, f);
   const dup = main.querySelector('#btn-dup');

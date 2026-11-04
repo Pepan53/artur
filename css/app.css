@@ -177,3 +177,4 @@ option.shoda { font-weight: 600; }
 
 .grid th.center, .grid td.center { text-align: center; }
 .chk-vychozi { width: 18px; height: 18px; cursor: pointer; }
+.grid.kv th { width: 170px; text-transform: none; letter-spacing: 0; font-size: 13px; }

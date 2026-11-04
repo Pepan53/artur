@@ -1,17 +1,18 @@
 // ARTUR – etapa 4: výpisy z banky (GPC) a párování úhrad.
-import * as C from './crypto.js?v=0.5.8';
-import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.8';
-import { parsePdfVypis } from './pdfvypis.js?v=0.5.8';
-import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.8';
-import { esc, loadDocs, canWrite, saveZak } from './views-fakturace.js?v=0.5.8';
+import * as C from './crypto.js?v=0.5.9';
+import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.9';
+import { parsePdfVypis } from './pdfvypis.js?v=0.5.9';
+import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.9';
+import { esc, loadDocs, canWrite, saveZak, vypisInfo, vypisText } from './views-fakturace.js?v=0.5.9';
 
 const ucetBezBanky = (c) => String(c || '').split('/')[0].replace(/^0+/, '');
 
 /** Zapíše úhradu do faktury (bez uložení). */
-function pripisUhradu(f, p, by, zdroj = 'výpis') {
-  f.uhrady = [...(f.uhrady || []), { datum: p.datum, castka: p.castka, zdroj, txId: klicPohybu(p), protiucet: p.protiucet || '', by }];
+function pripisUhradu(s, f, p, by, zdroj = 'výpis') {
+  const vypis = vypisInfo(s, p);
+  f.uhrady = [...(f.uhrady || []), { datum: p.datum, castka: p.castka, zdroj, txId: klicPohybu(p), protiucet: p.protiucet || '', vypis, by }];
   f.stav = stavPodleUhrad(f);
-  f.historie = [...(f.historie || []), { at: new Date().toISOString(), by, akce: `úhrada ${czk(p.castka)} z ${datum(p.datum)} (${zdroj}${p.protiucet ? ', ' + p.protiucet : ''})` }];
+  f.historie = [...(f.historie || []), { at: new Date().toISOString(), by, akce: `úhrada ${czk(p.castka)} z ${datum(p.datum)} (${zdroj}${vypis ? ', ' + vypisText(vypis) : ''}${p.protiucet ? ', ' + p.protiucet : ''})` }];
 }
 
 async function ulozit(ctx, s, polozky) {
@@ -48,8 +49,23 @@ export async function viewBanka(main, ctx) {
   const byAcc = {};
   for (const v of vypisy) (byAcc[v.ucet + ':' + v.datum.slice(0, 4)] ||= []).push(v.cislo);
   for (const [k, cisla] of Object.entries(byAcc)) { const mx = Math.max(...cisla); for (let i = 1; i <= mx; i++) if (!cisla.includes(i)) chybejici.push(`${k.replace(':', ' / ')} č. ${i}`); }
+  const det = ctx.state.detailId ? tx.find((t) => t.id === ctx.state.detailId) : null;
+  const detF = det?.fakturaId ? s.faktury.find((x) => x.id === det.fakturaId) : null;
+  const STAV_TX = { sparovano: 'spárováno', navrh: 'ke kontrole', nesparovano: 'nespárováno', ignorovano: 'není úhrada faktury', vydaj: 'výdaj', storno: 'storno' };
   main.insertAdjacentHTML('beforeend', `
     <h1>Banka a úhrady – ${esc(ctx.subjectName(s))}</h1>
+    ${det ? `<section class="box" id="tx-detail"><h2>Pohyb na účtu</h2>
+      <table class="grid kv"><tbody>
+        <tr><th>Výpis</th><td>${esc(vypisText(vypisInfo(s, det)) || '–')}</td></tr>
+        <tr><th>Datum</th><td>${datum(det.datum)}${det.datumValuty && det.datumValuty !== det.datum ? ` (valuta ${datum(det.datumValuty)})` : ''}</td></tr>
+        <tr><th>Částka</th><td>${det.smer === 'vydej' ? '−' : ''}${czk(det.castka)}</td></tr>
+        <tr><th>Protiúčet</th><td>${esc(det.protiucet || '–')}${det.nazevProti ? ' · ' + esc(det.nazevProti) : ''}</td></tr>
+        <tr><th>VS / KS / SS</th><td>${esc(det.vs || '–')} / ${esc(det.ks || '–')} / ${esc(det.ss || '–')}</td></tr>
+        <tr><th>Zpráva</th><td>${esc(det.zprava || det.text || '–')}</td></tr>
+        <tr><th>Číslo transakce</th><td>${esc((det.idTransakce || '').replace(/^0+/, '') || '–')}</td></tr>
+        <tr><th>Stav</th><td>${esc(STAV_TX[det.stav] || det.stav || '')}${detF ? ` → <button class="link" id="tx-fa">faktura ${esc(detF.cislo)}</button>` : ''}</td></tr>
+      </tbody></table>
+      <p><button class="small" id="tx-zavrit">Zavřít</button></p></section>` : ''}
     ${rw ? `<section class="box"><h2>Nahrát výpisy</h2>
       <p class="muted">Výpisy z internetového bankovnictví RB ve formátu GPC (ABO) nebo PDF. Můžete vybrat více souborů najednou. Stejný výpis nahraný znovu – i jednou jako GPC a podruhé jako PDF – nic nezdvojí. PDF se čte přímo v prohlížeči, nikam se neposílá.</p>
       <input type="file" id="gpc" accept=".gpc,.GPC,.pdf,.PDF,application/pdf" multiple>
@@ -74,6 +90,11 @@ export async function viewBanka(main, ctx) {
       ${vypisy.map((v) => `<tr><td>${esc(v.ucet)}</td><td>${v.cislo}</td><td>${datum(v.datumOd)} – ${datum(v.datum)}</td><td class="num">${czk(v.obratKredit)}</td><td class="num">${czk(v.obratDebet)}</td><td class="num">${czk(v.zustatek)}</td><td>${v.v_poradku ? '<span class="pill ok">sedí</span>' : '<span class="pill err">nesedí</span>'}</td></tr>`).join('')}
       </tbody></table>` : '<p>Zatím žádné.</p>'}
     </section>`);
+  if (det) {
+    main.querySelector('#tx-zavrit').onclick = () => ctx.go('banka');
+    const bf = main.querySelector('#tx-fa'); if (bf) bf.onclick = () => ctx.go('faktura', detF.id);
+    main.querySelector('#tx-detail').scrollIntoView({ block: 'start' });
+  }
   if (!rw) return;
 
   // --- nahrání výpisů
@@ -86,7 +107,14 @@ export async function viewBanka(main, ctx) {
         const buf = await file.arrayBuffer();
         const jePdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
         if (jePdf) prev.innerHTML = `<p class="muted">Čtu ${esc(file.name)}…</p>`;
-        for (const v of (jePdf ? await parsePdfVypis(buf) : parseGpc(buf))) vys.push({ ...v, soubor: file.name });
+        for (const v of (jePdf ? await parsePdfVypis(buf) : parseGpc(buf))) {
+          const format = jePdf ? 'PDF' : 'GPC';
+          const vid = ['vyp', v.ucet, v.datum, v.cislo].join('_');
+          const zname = (s.vypisy || []).find((x) => x.id === vid);
+          const vypis = { id: vid, cislo: v.cislo, rok: v.datum.slice(0, 4), format: zname ? (zname.format || format) : format };
+          for (const p of v.pohyby) p.vypis = vypis;
+          vys.push({ ...v, soubor: file.name, format });
+        }
       } catch (err) { prev.innerHTML = ''; return ctx.toast(`${file.name}: ${err.message}`, 'err'); }
     }
     const cizi = vys.filter((v) => !ucty.includes(v.ucet));
@@ -113,7 +141,7 @@ export async function viewBanka(main, ctx) {
       b.disabled = true; const st = prev.querySelector('#gpc-stav'); st.textContent = 'Ukládám…';
       const me = ctx.state.auth.email; const pol = [];
       const zmenene = new Map();
-      for (const a of r.auto) { pripisUhradu(a.f, a.p, me); zmenene.set(a.f.id, a.f); }
+      for (const a of r.auto) { pripisUhradu(s, a.f, a.p, me); zmenene.set(a.f.id, a.f); }
       const stavTx = new Map();
       for (const a of r.auto) stavTx.set(klicPohybu(a.p), { stav: 'sparovano', fakturaId: a.f.id });
       for (const n of r.navrhy) stavTx.set(klicPohybu(n.p), { stav: 'navrh', fakturaId: n.f.id, duvod: n.duvod });
@@ -125,7 +153,7 @@ export async function viewBanka(main, ctx) {
       for (const v of vys) {
         const { pohyby, ...hl } = v;
         const id = ['vyp', v.ucet, v.datum, v.cislo].join('_');
-        if (!(s.vypisy || []).some((x) => x.id === id)) pol.push({ id, t: 'vyp', obj: { ...hl, datumOd: v.datumPredchozi, pocetPohybu: pohyby.length, nahral: me } });
+        if (!(s.vypisy || []).some((x) => x.id === id) && !pol.some((x) => x.id === id)) pol.push({ id, t: 'vyp', obj: { ...hl, format: v.format, datumOd: v.datumPredchozi, pocetPohybu: pohyby.length, nahral: me } });
       }
       for (const f of zmenene.values()) pol.push({ id: f.id, t: 'fa', obj: f });
       try { await ulozit(ctx, s, pol); } catch (err) { b.disabled = false; st.textContent = ''; return ctx.toast('Uložení selhalo: ' + err.message, 'err'); }
@@ -146,7 +174,7 @@ export async function viewBanka(main, ctx) {
     const pol = []; const zmenene = new Map();
     for (const a of r.auto) {
       const t = nesp.find((x) => x.id === a.p.id);
-      pripisUhradu(a.f, t, me); zmenene.set(a.f.id, a.f);
+      pripisUhradu(s, a.f, t, me); zmenene.set(a.f.id, a.f);
       pol.push({ id: t.id, t: 'bank', obj: { ...t, stav: 'sparovano', fakturaId: a.f.id } });
     }
     for (const n of r.navrhy) {
@@ -173,14 +201,14 @@ export async function viewBanka(main, ctx) {
   };
   main.querySelectorAll('[data-ok]').forEach((b) => (b.onclick = async () => {
     const t = najdiTx(b.dataset.ok); const f = s.faktury.find((x) => x.id === t.fakturaId); if (!f) return;
-    pripisUhradu(f, t, ctx.state.auth.email, 'výpis, potvrzeno'); await zmenTx(t, { stav: 'sparovano' }, f); await naucUcet(ctx, s, f, t);
+    pripisUhradu(s, f, t, ctx.state.auth.email, 'výpis, potvrzeno'); await zmenTx(t, { stav: 'sparovano' }, f); await naucUcet(ctx, s, f, t);
     await ctx.audit(s.id, 'banka.parovani', `${czk(t.castka)} → ${f.cislo}`); await loadDocs(ctx, s, true); ctx.flash(`Úhrada přiřazena k ${f.cislo}. Stav: ${STAVY[f.stav]}.`); ctx.render();
   }));
   main.querySelectorAll('[data-no]').forEach((b) => (b.onclick = async () => { const t = najdiTx(b.dataset.no); await zmenTx(t, { stav: 'nesparovano', fakturaId: null, duvod: null }); await loadDocs(ctx, s, true); ctx.render(); }));
   main.querySelectorAll('[data-assign]').forEach((b) => (b.onclick = async () => {
     const t = najdiTx(b.dataset.assign); const fid = main.querySelector(`[data-sel="${CSS.escape(t.id)}"]`).value;
     const f = s.faktury.find((x) => x.id === fid); if (!f) return ctx.toast('Vyberte fakturu.', 'err');
-    pripisUhradu(f, t, ctx.state.auth.email, 'výpis, ručně'); await zmenTx(t, { stav: 'sparovano', fakturaId: f.id }, f); await naucUcet(ctx, s, f, t);
+    pripisUhradu(s, f, t, ctx.state.auth.email, 'výpis, ručně'); await zmenTx(t, { stav: 'sparovano', fakturaId: f.id }, f); await naucUcet(ctx, s, f, t);
     await ctx.audit(s.id, 'banka.parovani', `${czk(t.castka)} → ${f.cislo} (ručně)`); await loadDocs(ctx, s, true); ctx.flash(`Úhrada přiřazena k ${f.cislo}. Stav: ${STAVY[f.stav]}.`); ctx.render();
   }));
   main.querySelectorAll('[data-ign]').forEach((b) => (b.onclick = async () => {
