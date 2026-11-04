@@ -18,7 +18,7 @@ export const ADMIN_EMAILS = ['josef.dvorak@postme.cz'];
 // Odhlášení / zamčení po nečinnosti (minuty)
 export const IDLE_LOCK_MINUTES = 60;
 
-export const APP_VERSION = '0.5.5';
+export const APP_VERSION = '0.5.6';
 
 // Demo režim: běží jen v tomto prohlížeči, data v localStorage, bez Google přihlášení.
 // Zapne se, když firebaseConfig není vyplněný, nebo parametrem ?demo=1 v adrese.

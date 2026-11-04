@@ -118,15 +118,24 @@ table.grid { border-collapse: collapse; width: 100%; background: var(--panel); b
 .demo-banner { display: none; background: var(--warn-soft); color: var(--warn); text-align: center; font-size: 13px; padding: 4px; font-weight: 600; }
 body.demo .demo-banner { display: block; }
 
-@media (max-width: 760px) {
-  .layout { grid-template-columns: 1fr; }
-  .side { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
-  .side button { white-space: nowrap; }
-  main { padding: 16px; }
-  .top .switch select { min-width: 0; width: 100%; }
-  .top .who { margin-left: 0; }
+@media (max-width: 900px) {
+  /* hlavička: logo + subjekt + tlačítka na jednom řádku, uživatel pod tím */
+  .top { padding: 8px 12px; gap: 6px 8px; }
+  .top .brand strong { display: none; }
+  .top .switch { flex: 1 1 160px; font-size: 0; gap: 0; }
+  .top .switch select { min-width: 0; width: 100%; font-size: 15px; }
+  .top .who { order: 5; flex: 1 1 100%; margin-left: 0; font-size: 12px; color: var(--muted); }
+  .top > button { padding: 6px 10px; font-size: 14px; }
+  /* menu: vodorovný posuvný pruh pod hlavičkou */
+  .layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; align-items: start; min-height: 0; }
+  .side { flex-direction: row; align-items: center; overflow-x: auto; gap: 4px; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; position: sticky; top: 0; z-index: 5; background: var(--panel); scrollbar-width: thin; }
+  .side button { white-space: nowrap; padding: 6px 12px; border-radius: 16px; flex: 0 0 auto; }
+  .side .nav-group { margin: 0 0 0 6px; gap: 6px; }
+  .side button.sub { padding-left: 12px; }
+  main { padding: 16px 12px; }
   .card.narrow { margin: 16px; }
   .grid { font-size: 13px; }
+  .grid th, .grid td { padding: 7px 8px; }
 }
 
 /* etapa 1 */
@@ -161,3 +170,7 @@ body.demo .demo-banner { display: block; }
 .hist li { margin: 3px 0; }
 .grid td.num, .grid th.num { white-space: nowrap; }
 option.shoda { font-weight: 600; }
+@media (max-width: 560px) {
+  .top .switch { order: 4; flex: 1 1 100%; }
+  #btn-lock { margin-left: auto; }
+}

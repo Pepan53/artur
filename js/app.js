@@ -1,12 +1,12 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.5';
-import { currentTheme, toggleTheme } from './theme.js?v=0.5.5';
-import * as C from './crypto.js?v=0.5.5';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.5';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.5';
-import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.5';
-import { viewBanka } from './views-banka.js?v=0.5.5';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.5';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.6';
+import { currentTheme, toggleTheme } from './theme.js?v=0.5.6';
+import * as C from './crypto.js?v=0.5.6';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.6';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.6';
+import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.6';
+import { viewBanka } from './views-banka.js?v=0.5.6';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.6';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -62,11 +62,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.5.5');
+      const { createDemoStore } = await import('./store-demo.js?v=0.5.6');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.5');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.6');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -393,7 +393,7 @@ async function viewPrehled(main) {
       <td>${warns.length ? warns.map((w) => `<span class="pill warn">${esc(w)}</span>`).join(' ') : '<span class="pill ok">v pořádku</span>'}</td></tr>`;
   }).join('');
   main.insertAdjacentHTML('beforeend', `<h1>Přehled</h1>
-    <p class="muted">Faktury a adresář najdete v levém menu. Subjekt přepnete nahoře.</p>
+    <p class="muted">Faktury a adresář najdete v menu. Subjekt přepnete nahoře.</p>
     <table class="grid"><thead><tr><th>Subjekt</th><th>IČO</th><th>Moje role</th><th>Členů</th><th>Stav</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="5">Zatím žádný subjekt.' + (isAdmin() ? ' Založte ho v sekci Nastavení → „Nový subjekt“.' : '') + '</td></tr>'}</tbody></table>`);
   main.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => { state.current = b.dataset.open; state.view = cur().access === 'ok' ? 'subjekt' : 'prehled'; if (cur().access !== 'ok') { render(); const m = document.getElementById('main'); m.insertAdjacentHTML('beforeend', accessBox(cur())); bindAccessBox(m, cur()); } else render(); }));
