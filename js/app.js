@@ -1,12 +1,12 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.10';
-import { currentTheme, toggleTheme } from './theme.js?v=0.5.10';
-import * as C from './crypto.js?v=0.5.10';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.10';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.10';
-import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.10';
-import { viewBanka } from './views-banka.js?v=0.5.10';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.10';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.11';
+import { currentTheme, toggleTheme } from './theme.js?v=0.5.11';
+import * as C from './crypto.js?v=0.5.11';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.11';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.11';
+import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.11';
+import { viewBanka } from './views-banka.js?v=0.5.11';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.11';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -62,11 +62,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.5.10');
+      const { createDemoStore } = await import('./store-demo.js?v=0.5.11');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.10');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.11');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -77,6 +77,33 @@ export async function start() {
   checkNewVersion();
   setInterval(checkNewVersion, 10 * 60000);
   ['mousemove', 'keydown', 'click', 'touchstart'].forEach((ev) => document.addEventListener(ev, resetIdle, { passive: true }));
+  window.addEventListener('popstate', onPopState);
+}
+
+// ---------------------------------------------------------------- tlačítko Zpět (historie v rámci stránky)
+// ARTUR je jedna stránka: každé přepnutí obrazovky se zapíše do historie prohlížeče, takže Zpět/Vpřed
+// přepíná obrazovky a stránku neopouští (opuštění = nové načtení = zamčení).
+const navKey = (x) => [x.current || '', x.view || '', x.detailId || ''].join('|');
+function zapisHistorii() {
+  const nav = { artur: true, current: state.current, view: state.view || 'prehled', detailId: state.detailId || null };
+  const h = history.state;
+  if (!h || !h.artur) { history.replaceState({ artur: true, koren: true }, ''); history.pushState(nav, ''); return; }
+  if (state.zHistorie) { state.zHistorie = false; return; }
+  if (navKey(h) !== navKey(nav)) history.pushState(nav, '');
+}
+function onPopState(e) {
+  const h = e.state;
+  if (!state.privateKey || !h || !h.artur) return;
+  if (h.koren) {
+    // začátek historie ARTURa: zůstaň na stránce (jinak by se odešlo a ARTUR by se zamkl)
+    history.pushState({ artur: true, current: state.current, view: state.view || 'prehled', detailId: state.detailId || null }, '');
+    return;
+  }
+  if (h.current && subjectById(h.current)) state.current = h.current;
+  state.view = h.view; state.detailId = h.detailId;
+  state.zHistorie = true;
+  render();
+  window.scrollTo(0, 0);
 }
 
 async function checkNewVersion() {
@@ -320,6 +347,7 @@ const NAV_NASTAVENI = [
 ];
 
 function renderMain(root) {
+  zapisHistorii();
   const s = cur();
   const aktivni = NAV_PARENT[state.view] || state.view;
   const nastaveni = NAV_NASTAVENI.filter(([, , a]) => !a || isAdmin());

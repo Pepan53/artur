@@ -3,6 +3,9 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.5.11 (2026-11-04)
+- Tlačítko Zpět (i na myši) a Vpřed přepíná obrazovky ARTURa – faktura → seznam faktur atd. Stránku už neopouští, takže se ARTUR nezamkne.
+
 ## 0.5.10 (2026-11-04)
 - Z hlavičky odebráno tlačítko „Zamknout“ (matoucí vedle „Odhlásit“). Automatické zamčení po hodině nečinnosti zůstává.
 
