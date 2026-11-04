@@ -1,5 +1,5 @@
 // ARTUR – PDF faktury (pdfmake, písmo Roboto s českou diakritikou, QR Platba).
-import { TYPY, radkaCelkem, czk, datum, cislo, qrPlatba, adresaRadky, vsZCisla } from './invoices.js?v=0.5.9';
+import { TYPY, radkaCelkem, czk, datum, cislo, qrPlatba, adresaRadky, vsZCisla } from './invoices.js?v=0.5.10';
 
 let loading = null;
 function loadScript(src) {

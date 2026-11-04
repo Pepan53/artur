@@ -2,7 +2,7 @@ const { chromium } = require('playwright');
 const URL = 'http://localhost:8765/index.html?demo=1';
 const SHOT = process.env.SHOT || '/home/claude/artur-app/tests/shots';
 require('fs').mkdirSync(SHOT, { recursive: true });
-let dialogAnswers = [];
+let dialogAnswers = []; let ok0;
 (async () => {
   const browser = await chromium.launch();
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage();
@@ -123,7 +123,7 @@ let dialogAnswers = [];
   step('Zamčení a historie');
   await nav('Historie změn'); await page.screenshot({ path: SHOT + '/05-historie.png' });
   assert((await text()).includes('Přístup obnoven záchranným klíčem'), 'audit zaznamenal obnovu');
-  await page.click('#btn-lock');
+  ok0 = await page.$('#btn-lock'); assert(!ok0, 'tlačítko Zamknout není v hlavičce'); await page.evaluate(() => window.arturLock()); await page.waitForTimeout(300);
   assert(!!(await page.$('#f-unlock')), 'zamčení vyžaduje heslo');
 
   step('Kontrola úložiště: žádné citlivé údaje čitelně');
