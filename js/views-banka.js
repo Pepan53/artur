@@ -1,21 +1,13 @@
 // ARTUR – etapa 4: výpisy z banky (GPC) a párování úhrad.
-import * as C from './crypto.js?v=0.5.12';
-import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.12';
-import { parsePdfVypis } from './pdfvypis.js?v=0.5.12';
-import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.12';
-import { esc, loadDocs, canWrite, saveZak, vypisInfo, vypisText } from './views-fakturace.js?v=0.5.12';
+import * as C from './crypto.js?v=0.5.13';
+import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.13';
+import { parsePdfVypis } from './pdfvypis.js?v=0.5.13';
+import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.13';
+import { esc, loadDocs, canWrite, saveZak, vypisInfo, vypisText, vypisRef, jeMesicni } from './views-fakturace.js?v=0.5.13';
 
 const ucetBezBanky = (c) => String(c || '').split('/')[0].replace(/^0+/, '');
 
 /** Zapíše úhradu do faktury (bez uložení). */
-/** Měsíční výpis = celý kalendářní měsíc; ostatní (denní, týdenní…) mají u RB vlastní číselnou řadu. */
-export function jeMesicni(v) {
-  const od = v.datumOd || v.datumPredchozi || ''; const d = v.datum || '';
-  if (!od || !d || od.slice(0, 7) !== d.slice(0, 7) || od.slice(8) !== '01') return false;
-  const posledni = new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).getUTCDate();
-  return Number(d.slice(8)) === posledni;
-}
-
 function pripisUhradu(s, f, p, by, zdroj = 'výpis') {
   if ((f.uhrady || []).some((u) => u.txId && u.txId === klicPohybu(p))) return false; // pojistka: stejná platba se nezapíše dvakrát
   const vypis = vypisInfo(s, p);
@@ -121,7 +113,7 @@ export async function viewBanka(main, ctx) {
           const format = jePdf ? 'PDF' : 'GPC';
           const vid = ['vyp', v.ucet, v.datum, v.cislo].join('_');
           const zname = (s.vypisy || []).find((x) => x.id === vid);
-          const vypis = { id: vid, cislo: v.cislo, rok: v.datum.slice(0, 4), format: zname ? (zname.format || format) : format };
+          const vypis = vypisRef({ ...v, id: vid }, zname ? (zname.format || format) : format);
           for (const p of v.pohyby) p.vypis = vypis;
           vys.push({ ...v, soubor: file.name, format });
         }
@@ -131,6 +123,17 @@ export async function viewBanka(main, ctx) {
     if (cizi.length) return ctx.toast(`Výpis účtu ${cizi[0].ucet} nepatří k subjektu ${ctx.subjectName(s)} (účty subjektu: ${ucty.join(', ') || 'žádné – doplňte v Údajích subjektu'}).`, 'err');
     const zname = new Set(tx.map((t) => t.id));
     const nove = vys.flatMap((v) => v.pohyby).filter((p) => !zname.has(klicPohybu(p)));
+    // Už nahrané pohyby z průběžného výpisu, které teď přišly v měsíčním → u pohybu i u úhrady se uvede měsíční výpis.
+    const upresnit = [];
+    for (const p of vys.flatMap((v) => v.pohyby)) {
+      if (!p.vypis?.mesicni || !zname.has(klicPohybu(p))) continue;
+      const t = tx.find((x) => x.id === klicPohybu(p));
+      const stary = t.vypis || vypisInfo(s, t);
+      if (!stary || stary.id === p.vypis.id || (stary.mesicni ?? false)) continue;
+      if (t.vypis?.mesicni) continue;
+      upresnit.push({ t, stary, novy: p.vypis });
+    }
+    const upresnitUhrad = upresnit.filter((u) => u.t.fakturaId && u.t.stav === 'sparovano').length;
     const r = sparuj(nove, s.faktury, s.zakaznici);
     const prijmy = nove.filter((p) => p.smer === 'prijem');
     const sum = (l) => czk(round2(l.reduce((a, x) => a + (x.p ? x.p.castka : x.castka), 0)));
@@ -144,7 +147,8 @@ export async function viewBanka(main, ctx) {
         <li>Ke kontrole: <strong>${r.navrhy.length}</strong></li>
         <li>Nespárované příjmy: <strong>${r.nesparovane.length}</strong> (${sum(r.nesparovane)})</li>
       </ul>
-      ${nove.length ? '<button class="primary" id="btn-ulozit">Uložit výpisy a spárovat</button>' : '<p class="note">Žádné nové pohyby.</p>'}
+      ${upresnit.length ? `<p class="note">${upresnit.length} už nahraných pohybů z průběžného výpisu je i v tomto měsíčním výpisu${upresnitUhrad ? ` – u ${upresnitUhrad} úhrad faktur se údaj o výpisu změní na měsíční` : ''}.</p>` : ''}
+      ${nove.length || upresnit.length ? `<button class="primary" id="btn-ulozit">${nove.length ? 'Uložit výpisy a spárovat' : 'Uložit výpis'}</button>` : '<p class="note">Žádné nové pohyby.</p>'}
       <p id="gpc-stav" class="muted"></p>`;
     const b = prev.querySelector('#btn-ulozit'); if (!b) return;
     b.onclick = async () => {
@@ -165,12 +169,21 @@ export async function viewBanka(main, ctx) {
         const id = ['vyp', v.ucet, v.datum, v.cislo].join('_');
         if (!(s.vypisy || []).some((x) => x.id === id) && !pol.some((x) => x.id === id)) pol.push({ id, t: 'vyp', obj: { ...hl, format: v.format, datumOd: v.datumPredchozi, pocetPohybu: pohyby.length, nahral: me } });
       }
+      for (const { t, stary, novy } of upresnit) {
+        pol.push({ id: t.id, t: 'bank', obj: { ...t, vypis: novy } });
+        const f = t.fakturaId && (zmenene.get(t.fakturaId) || s.faktury.find((x) => x.id === t.fakturaId));
+        const u = f && (f.uhrady || []).find((x) => x.txId === t.id);
+        if (!u) continue;
+        u.vypis = novy;
+        f.historie = [...(f.historie || []), { at: new Date().toISOString(), by: me, akce: `úhrada ${czk(t.castka)} z ${datum(t.datum)}: ${vypisText(stary)} → ${vypisText(novy)}` }];
+        zmenene.set(f.id, f);
+      }
       for (const f of zmenene.values()) pol.push({ id: f.id, t: 'fa', obj: f });
       try { await ulozit(ctx, s, pol); } catch (err) { b.disabled = false; st.textContent = ''; return ctx.toast('Uložení selhalo: ' + err.message, 'err'); }
       for (const a of r.auto) await naucUcet(ctx, s, a.f, a.p);
       await ctx.audit(s.id, 'banka.import', `${vys.length} výpisů, ${nove.length} pohybů, spárováno ${r.auto.length}, ke kontrole ${r.navrhy.length}, nespárováno ${r.nesparovane.length}`);
       await loadDocs(ctx, s, true);
-      ctx.flash(`Výpisy uloženy. Spárováno ${r.auto.length} úhrad, ke kontrole ${r.navrhy.length}, nespárovaných příjmů ${r.nesparovane.length}.`);
+      ctx.flash(`Výpisy uloženy. Spárováno ${r.auto.length} úhrad, ke kontrole ${r.navrhy.length}, nespárovaných příjmů ${r.nesparovane.length}.${upresnitUhrad ? ` U ${upresnitUhrad} úhrad je teď uveden měsíční výpis.` : ''}`);
       ctx.render();
     };
   };

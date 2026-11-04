@@ -1,8 +1,8 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.5.12';
-import { aresLookup, icoValid } from './czech.js?v=0.5.12';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.12';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.12';
+import * as C from './crypto.js?v=0.5.13';
+import { aresLookup, icoValid } from './czech.js?v=0.5.13';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.13';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.13';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -27,12 +27,24 @@ async function loadOwn(ctx, s) {
   return { zak: zak.sort((a, b) => (a.nazev || '').localeCompare(b.nazev || '', 'cs')), fa, sab, bank, vyp };
 }
 
-/** Výpis, ze kterého pohyb pochází (u starších pohybů dohledá podle účtu a období). */
+/** Měsíční výpis = celý kalendářní měsíc; ostatní (denní, týdenní…) mají u RB vlastní číselnou řadu. */
+export function jeMesicni(v) {
+  const od = v.datumOd || v.datumPredchozi || ''; const d = v.datum || '';
+  if (!od || !d || od.slice(0, 7) !== d.slice(0, 7) || od.slice(8) !== '01') return false;
+  const posledni = new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).getUTCDate();
+  return Number(d.slice(8)) === posledni;
+}
+/** Údaj o výpisu, který si nese pohyb a úhrada. */
+export function vypisRef(v, format) {
+  return { id: v.id || ['vyp', v.ucet, v.datum, v.cislo].join('_'), cislo: v.cislo, rok: v.datum.slice(0, 4), format: format || v.format || (/\.pdf$/i.test(v.soubor || '') ? 'PDF' : 'GPC'), mesicni: jeMesicni(v) };
+}
+/** Výpis, ze kterého pohyb pochází (u starších pohybů dohledá podle účtu a období; přednost má měsíční výpis). */
 export function vypisInfo(s, t) {
   if (!t) return null;
   if (t.vypis) return t.vypis;
-  const v = (s.vypisy || []).find((x) => x.ucet === t.ucet && (x.datumOd || x.datumPredchozi || '') <= t.datum && t.datum <= x.datum);
-  return v ? { id: v.id, cislo: v.cislo, rok: v.datum.slice(0, 4), format: v.format || (/\.pdf$/i.test(v.soubor || '') ? 'PDF' : 'GPC') } : null;
+  const kand = (s.vypisy || []).filter((x) => x.ucet === t.ucet && (x.datumOd || x.datumPredchozi || '') <= t.datum && t.datum <= x.datum);
+  const v = kand.find(jeMesicni) || kand[0];
+  return v ? vypisRef(v) : null;
 }
 export const vypisText = (vi) => (vi ? `výpis č. ${vi.cislo}/${vi.rok} (${vi.format})` : '');
 
@@ -449,7 +461,7 @@ function detail(main, ctx, s, f) {
     await loadDocs(ctx, s, true); ctx.go('faktura', f.id);
   }));
   const mb = main.querySelector('#btn-mail');
-  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.5.12'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
+  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.5.13'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
   const eb = main.querySelector('#btn-edit-prev');
   if (eb) eb.onclick = () => editPrevzata(main.querySelector('#edit-box'), ctx, s, f);
   const dup = main.querySelector('#btn-dup');
