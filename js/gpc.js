@@ -1,5 +1,5 @@
 // ARTUR – výpisy GPC (ABO) z Raiffeisenbank a párování plateb s fakturami.
-import { round2, uhrazeno } from './invoices.js?v=0.5.11';
+import { round2, uhrazeno } from './invoices.js?v=0.5.12';
 
 const amt = (s) => Number(s) / 100;
 const dmy = (s) => `20${s.slice(4, 6)}-${s.slice(2, 4)}-${s.slice(0, 2)}`;

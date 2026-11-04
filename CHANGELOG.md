@@ -3,6 +3,10 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.5.12 (2026-11-04)
+- Průběžné (denní) výpisy RB mají vlastní číselnou řadu: hlídání chybějících výpisů se týká jen měsíčních; v seznamu výpisů je sloupec Druh (měsíční / průběžný, GPC / PDF).
+- Pojistka: platba se stejným číslem transakce se k faktuře nezapíše dvakrát. Ověřeno na denním výpisu č. 146 a měsíčním za říjen 2026 – 7 společných plateb se nezdvojilo.
+
 ## 0.5.11 (2026-11-04)
 - Tlačítko Zpět (i na myši) a Vpřed přepíná obrazovky ARTURa – faktura → seznam faktur atd. Stránku už neopouští, takže se ARTUR nezamkne.
 

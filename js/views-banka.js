@@ -1,18 +1,28 @@
 // ARTUR – etapa 4: výpisy z banky (GPC) a párování úhrad.
-import * as C from './crypto.js?v=0.5.11';
-import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.11';
-import { parsePdfVypis } from './pdfvypis.js?v=0.5.11';
-import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.11';
-import { esc, loadDocs, canWrite, saveZak, vypisInfo, vypisText } from './views-fakturace.js?v=0.5.11';
+import * as C from './crypto.js?v=0.5.12';
+import { parseGpc, sparuj, klicPohybu } from './gpc.js?v=0.5.12';
+import { parsePdfVypis } from './pdfvypis.js?v=0.5.12';
+import { STAVY, uhrazeno, stavPodleUhrad, czk, datum, round2 } from './invoices.js?v=0.5.12';
+import { esc, loadDocs, canWrite, saveZak, vypisInfo, vypisText } from './views-fakturace.js?v=0.5.12';
 
 const ucetBezBanky = (c) => String(c || '').split('/')[0].replace(/^0+/, '');
 
 /** Zapíše úhradu do faktury (bez uložení). */
+/** Měsíční výpis = celý kalendářní měsíc; ostatní (denní, týdenní…) mají u RB vlastní číselnou řadu. */
+export function jeMesicni(v) {
+  const od = v.datumOd || v.datumPredchozi || ''; const d = v.datum || '';
+  if (!od || !d || od.slice(0, 7) !== d.slice(0, 7) || od.slice(8) !== '01') return false;
+  const posledni = new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).getUTCDate();
+  return Number(d.slice(8)) === posledni;
+}
+
 function pripisUhradu(s, f, p, by, zdroj = 'výpis') {
+  if ((f.uhrady || []).some((u) => u.txId && u.txId === klicPohybu(p))) return false; // pojistka: stejná platba se nezapíše dvakrát
   const vypis = vypisInfo(s, p);
   f.uhrady = [...(f.uhrady || []), { datum: p.datum, castka: p.castka, zdroj, txId: klicPohybu(p), protiucet: p.protiucet || '', vypis, by }];
   f.stav = stavPodleUhrad(f);
   f.historie = [...(f.historie || []), { at: new Date().toISOString(), by, akce: `úhrada ${czk(p.castka)} z ${datum(p.datum)} (${zdroj}${vypis ? ', ' + vypisText(vypis) : ''}${p.protiucet ? ', ' + p.protiucet : ''})` }];
+  return true;
 }
 
 async function ulozit(ctx, s, polozky) {
@@ -47,7 +57,7 @@ export async function viewBanka(main, ctx) {
     .sort((a, b) => (b.datumVystaveni || '').localeCompare(a.datumVystaveni || ''));
   const chybejici = [];
   const byAcc = {};
-  for (const v of vypisy) (byAcc[v.ucet + ':' + v.datum.slice(0, 4)] ||= []).push(v.cislo);
+  for (const v of vypisy.filter(jeMesicni)) (byAcc[v.ucet + ':' + v.datum.slice(0, 4)] ||= []).push(v.cislo);
   for (const [k, cisla] of Object.entries(byAcc)) { const mx = Math.max(...cisla); for (let i = 1; i <= mx; i++) if (!cisla.includes(i)) chybejici.push(`${k.replace(':', ' / ')} č. ${i}`); }
   const det = ctx.state.detailId ? tx.find((t) => t.id === ctx.state.detailId) : null;
   const detF = det?.fakturaId ? s.faktury.find((x) => x.id === det.fakturaId) : null;
@@ -86,8 +96,8 @@ export async function viewBanka(main, ctx) {
     </section>
     <section class="box"><h2>Nahrané výpisy (${vypisy.length})</h2>
       ${chybejici.length ? `<p class="warn">Chybí výpisy: ${esc(chybejici.slice(0, 12).join(', '))}${chybejici.length > 12 ? '…' : ''}</p>` : ''}
-      ${vypisy.length ? `<table class="grid"><thead><tr><th>Účet</th><th>Č.</th><th>Období</th><th class="num">Příjmy</th><th class="num">Výdaje</th><th class="num">Zůstatek</th><th>Kontrola</th></tr></thead><tbody>
-      ${vypisy.map((v) => `<tr><td>${esc(v.ucet)}</td><td>${v.cislo}</td><td>${datum(v.datumOd)} – ${datum(v.datum)}</td><td class="num">${czk(v.obratKredit)}</td><td class="num">${czk(v.obratDebet)}</td><td class="num">${czk(v.zustatek)}</td><td>${v.v_poradku ? '<span class="pill ok">sedí</span>' : '<span class="pill err">nesedí</span>'}</td></tr>`).join('')}
+      ${vypisy.length ? `<table class="grid"><thead><tr><th>Účet</th><th>Č.</th><th>Druh</th><th>Období</th><th class="num">Příjmy</th><th class="num">Výdaje</th><th class="num">Zůstatek</th><th>Kontrola</th></tr></thead><tbody>
+      ${vypisy.map((v) => `<tr><td>${esc(v.ucet)}</td><td>${v.cislo}</td><td>${jeMesicni(v) ? 'měsíční' : 'průběžný'}${v.format ? ' · ' + esc(v.format) : ''}</td><td>${datum(v.datumOd)} – ${datum(v.datum)}</td><td class="num">${czk(v.obratKredit)}</td><td class="num">${czk(v.obratDebet)}</td><td class="num">${czk(v.zustatek)}</td><td>${v.v_poradku ? '<span class="pill ok">sedí</span>' : '<span class="pill err">nesedí</span>'}</td></tr>`).join('')}
       </tbody></table>` : '<p>Zatím žádné.</p>'}
     </section>`);
   if (det) {
