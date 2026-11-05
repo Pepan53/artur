@@ -1,8 +1,8 @@
 // ARTUR – etapa 3: šablony opakovaných faktur, měsíční fakturace, odeslání e-mailem.
-import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.1';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.1';
-import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken, vyjmenuj } from './mail.js?v=0.6.1';
-import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.6.1';
+import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.2';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.2';
+import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken, vyjmenuj } from './mail.js?v=0.6.2';
+import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.6.2';
 
 export const MESICE = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 const MESICE_V = ['lednu', 'únoru', 'březnu', 'dubnu', 'květnu', 'červnu', 'červenci', 'srpnu', 'září', 'říjnu', 'listopadu', 'prosinci'];

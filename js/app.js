@@ -1,12 +1,12 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.6.1';
-import { currentTheme, toggleTheme } from './theme.js?v=0.6.1';
-import * as C from './crypto.js?v=0.6.1';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.6.1';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport, today } from './views-fakturace.js?v=0.6.1';
-import { viewSablony, viewSablona, viewMesic, pripravitMesic, kSchvaleni, MESICE } from './views-opakovani.js?v=0.6.1';
-import { viewBanka } from './views-banka.js?v=0.6.1';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.6.1';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.6.2';
+import { currentTheme, toggleTheme } from './theme.js?v=0.6.2';
+import * as C from './crypto.js?v=0.6.2';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.6.2';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport, today } from './views-fakturace.js?v=0.6.2';
+import { viewSablony, viewSablona, viewMesic, pripravitMesic, kSchvaleni, MESICE } from './views-opakovani.js?v=0.6.2';
+import { viewBanka } from './views-banka.js?v=0.6.2';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.6.2';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -62,11 +62,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.6.1');
+      const { createDemoStore } = await import('./store-demo.js?v=0.6.2');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.6.1');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.6.2');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -840,15 +840,31 @@ async function viewUcet(main) {
 async function viewAdminUsers(main) {
   const list = await state.store.listAllowed();
   list.sort((a, b) => a.id.localeCompare(b.id));
+  const profily = await Promise.all(list.map((u) => state.store.getUser(u.id).catch(() => null)));
+  const edit = state.ui.upravitUzivatele || null;
   main.insertAdjacentHTML('beforeend', `<h1>Uživatelé aplikace</h1>
-    <p class="muted">Kdo se smí do ARTURa přihlásit. K jednotlivým subjektům je pak přidává jejich vlastník.</p>
-    <table class="grid"><thead><tr><th>E-mail</th><th>Jméno</th><th>Šifrovací heslo</th><th></th></tr></thead><tbody>
-    ${(await Promise.all(list.map(async (u) => { const p = await state.store.getUser(u.id).catch(() => null);
-      return `<tr><td>${esc(u.id)}</td><td>${esc(u.name)}</td><td>${p ? '<span class="pill ok">nastaveno</span>' : '<span class="pill warn">zatím ne</span>'}</td>
-      <td>${ADMIN_EMAILS.includes(u.id) ? '<span class="muted small">administrátor</span>' : `<button class="small danger" data-del="${esc(u.id)}">Zakázat přihlášení</button>`}</td></tr>`; }))).join('')}
+    <p class="muted">Kdo se smí do ARTURa přihlásit. K jednotlivým subjektům je pak přidává jejich vlastník (Nastavení → Členové a přístup).</p>
+    <table class="grid"><thead><tr><th>E-mail</th><th>Jméno</th><th>Poznámka</th><th>Šifrovací heslo</th><th></th></tr></thead><tbody>
+    ${list.map((u, i) => {
+      const heslo = profily[i] ? '<span class="pill ok">nastaveno</span>' : '<span class="pill warn">zatím ne</span>';
+      if (edit === u.id) return `<tr class="edit"><td>${esc(u.id)}</td>
+        <td><input id="u-name" value="${esc(u.name)}" placeholder="jméno"></td><td><input id="u-pozn" value="${esc(u.poznamka)}" placeholder="např. technický účet pro odesílání faktur"></td><td>${heslo}</td>
+        <td class="row"><button class="small primary" id="u-save">Uložit</button><button class="small" id="u-cancel">Zrušit</button></td></tr>`;
+      return `<tr><td>${esc(u.id)}</td><td>${esc(u.name)}</td><td class="small">${esc(u.poznamka)}</td><td>${heslo}</td>
+        <td class="row"><button class="small" data-edit="${esc(u.id)}">Upravit</button>${ADMIN_EMAILS.includes(u.id) ? '<span class="muted small">administrátor</span>' : `<button class="small danger" data-del="${esc(u.id)}">Zakázat přihlášení</button>`}</td></tr>`;
+    }).join('')}
     </tbody></table>
+    <p class="muted small">E-mail změnit nelze – je na něj vázané šifrovací heslo a přístup k subjektům. Při změně adresy povolte novou, vlastník ji přidá do subjektů a starou pak zakažte.</p>
     <h2>Povolit přihlášení</h2>
-    <form id="f-allow" class="row"><input name="email" type="email" placeholder="e-mail (účet Google)" required><input name="name" placeholder="jméno"><button class="primary">Povolit</button></form>`);
+    <form id="f-allow" class="row"><input name="email" type="email" placeholder="e-mail (účet Google)" required><input name="name" placeholder="jméno"><input name="poznamka" placeholder="poznámka (nepovinné)"><button class="primary">Povolit</button></form>`);
+  main.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { state.ui.upravitUzivatele = b.dataset.edit; render(); }));
+  const zrus = main.querySelector('#u-cancel'); if (zrus) zrus.onclick = () => { state.ui.upravitUzivatele = null; render(); };
+  const ulozit = main.querySelector('#u-save');
+  if (ulozit) ulozit.onclick = async () => {
+    const name = main.querySelector('#u-name').value.trim(); const poznamka = main.querySelector('#u-pozn').value.trim();
+    try { await state.store.setAllowed(edit, { name, poznamka, editedBy: state.auth.email }); } catch (e) { return toast(e.message, 'err'); }
+    state.ui.upravitUzivatele = null; flash('Uloženo: ' + edit); render();
+  };
   main.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
     if (!confirm(`Zakázat přihlášení ${b.dataset.del}? (Ze subjektů ho odeberte zvlášť u každého subjektu.)`)) return;
     await state.store.removeAllowed(b.dataset.del); flash('Přihlášení zakázáno: ' + b.dataset.del); render();
@@ -856,7 +872,8 @@ async function viewAdminUsers(main) {
   main.querySelector('#f-allow').onsubmit = async (e) => {
     e.preventDefault(); const f = new FormData(e.target); const em = lower(f.get('email'));
     if (!emailOk(em)) return toast('Neplatný e-mail.', 'err');
-    await state.store.setAllowed(em, { name: f.get('name').trim(), addedBy: state.auth.email });
+    if (list.some((u) => u.id === em) && !confirm(`${em} už přihlášení má. Přepsat jméno a poznámku?`)) return;
+    await state.store.setAllowed(em, { name: f.get('name').trim(), poznamka: f.get('poznamka').trim(), addedBy: state.auth.email });
     flash('Povoleno: ' + em); render();
   };
 }

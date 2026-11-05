@@ -3,6 +3,9 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.6.2 (2026-11-05)
+- Uživatelé aplikace: u každého uživatele lze upravit jméno a poznámku (tlačítko Upravit), poznámku lze zadat i při povolení. E-mail se měnit nedá (je na něj vázané heslo a přístup k subjektům).
+
 ## 0.6.1 (2026-11-05)
 - Splatnost do konce měsíce se nastavuje automaticky: návrh šablon ji převezme z poslední faktury zákazníka a u starších šablon nabídne Opakované faktury hromadnou opravu jedním tlačítkem. V seznamu šablon je vidět splatnost.
 
