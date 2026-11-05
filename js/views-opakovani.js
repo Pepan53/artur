@@ -1,8 +1,8 @@
 // ARTUR – etapa 3: šablony opakovaných faktur, měsíční fakturace, odeslání e-mailem.
-import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.14';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.14';
-import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken } from './mail.js?v=0.5.14';
-import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.5.14';
+import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.0';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.0';
+import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken, vyjmenuj } from './mail.js?v=0.6.0';
+import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.6.0';
 
 export const MESICE = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 const MESICE_V = ['lednu', 'únoru', 'březnu', 'dubnu', 'květnu', 'červnu', 'červenci', 'srpnu', 'září', 'říjnu', 'listopadu', 'prosinci'];
@@ -45,9 +45,11 @@ export function konceptZeSablony(s, t, mesic) {
   const dv = `${mesic}-${String(den).padStart(2, '0')}`;
   const ucet = (s.data.ucty || []).find((u) => u.cislo === t.ucetCislo) || (s.data.ucty || []).find((u) => u.vychozi) || (s.data.ucty || [])[0] || null;
   const polozky = (t.polozky || []).map((p) => ({ ...p, popis: vyplnText(p.popis, obdobi) }));
+  const konecMesice = `${mesic}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+  const splatnost = t.splatnostKonec ? konecMesice : addDays(dv, Number(t.splatnostDni ?? s.data.splatnost ?? 14));
   return {
-    typ: t.typ || 'faktura', stav: 'koncept', datumVystaveni: dv, splatnostDni: Number(t.splatnostDni ?? s.data.splatnost ?? 14),
-    datumSplatnosti: addDays(dv, Number(t.splatnostDni ?? s.data.splatnost ?? 14)),
+    typ: t.typ || 'faktura', stav: 'koncept', datumVystaveni: dv, obdobiYm: obdobi,
+    splatnostDni: Math.round((Date.parse(splatnost) - Date.parse(dv)) / 864e5), datumSplatnosti: splatnost,
     uvod: t.uvod ?? s.data.uvodText ?? '', poznamka: t.poznamka || '', polozky, celkem: soucet(polozky),
     zakaznikId: t.zakaznikId, odberatel: snapshotOdberatele(z), ucetCislo: ucet?.cislo || '', ucet,
     sablonaId: t.id, sablonaMesic: mesic, uhrady: [], historie: [],
@@ -69,21 +71,93 @@ async function vystavit(ctx, s, f) {
   return cislo;
 }
 
-/** Odešle fakturu e-mailem a zapíše to do faktury. */
-export async function odeslatFakturu(ctx, s, f, { to, predmet, text }) {
-  const blob = await invoicePdfBlob(f, s.data);
+/** Odešle jeden e-mail s jednou nebo více fakturami a zapíše to do každé z nich. */
+export async function odeslatEmail(ctx, s, faktury, { to, predmet, text }) {
+  const attachments = [];
+  for (const f of faktury) attachments.push({ name: pdfFileName(f, s.data), blob: await invoicePdfBlob(f, s.data) });
   const kopie = s.data.emailKopie !== false ? [ctx.state.auth.email] : [];
-  await sendMail(ctx.state.auth.email, { to, bcc: kopie, subject: predmet, text, attachment: { name: pdfFileName(f, s.data), blob } });
-  const at = new Date().toISOString();
-  f.odeslano = [...(f.odeslano || []), { at, by: ctx.state.auth.email, to }];
-  f.historie = [...(f.historie || []), { at, by: ctx.state.auth.email, akce: `odesláno e-mailem na ${to.join(', ')}` }];
-  await saveDoc(ctx, s, 'fa', f);
-  await ctx.audit(s.id, 'faktura.odeslana', `${f.cislo} → ${to.join(', ')}`);
+  await sendMail(ctx.state.auth.email, { to, bcc: kopie, subject: predmet, text, attachments });
+  const at = new Date().toISOString(); const me = ctx.state.auth.email;
+  for (const f of faktury) {
+    const spolu = faktury.filter((x) => x !== f).map((x) => x.cislo);
+    f.odeslano = [...(f.odeslano || []), { at, by: me, to, spolu }];
+    f.historie = [...(f.historie || []), { at, by: me, akce: `odesláno e-mailem na ${to.join(', ')}${spolu.length ? ` (v jednom e-mailu s ${spolu.join(', ')})` : ''}` }];
+    await saveDoc(ctx, s, 'fa', f);
+  }
+  await ctx.audit(s.id, 'faktura.odeslana', `${faktury.map((f) => f.cislo).join(', ')} → ${to.join(', ')}`);
 }
+export const odeslatFakturu = (ctx, s, f, msg) => odeslatEmail(ctx, s, [f], msg);
 
 export function prijemci(s, f) {
   const z = s.zakaznici.find((x) => x.id === f.zakaznikId);
   return (z?.emaily?.length ? z.emaily : (f.odberatel?.email ? [f.odberatel.email] : [])).filter(Boolean);
+}
+
+/**
+ * Seskupí faktury do e-mailů podle příjemců (stejná sada adres = jeden e-mail).
+ * Zákazník s volbou „posílat zvlášť“ dostane vlastní e-mail. Faktury bez e-mailu jsou v `bezEmailu`.
+ */
+export function emailSkupiny(s, faktury) {
+  const skupiny = new Map(); const bezEmailu = [];
+  for (const f of [...faktury].sort((a, b) => String(a.cislo).localeCompare(String(b.cislo)))) {
+    const to = prijemci(s, f);
+    if (!to.length) { bezEmailu.push(f); continue; }
+    const z = s.zakaznici.find((x) => x.id === f.zakaznikId);
+    const key = z?.samostatne ? 'z:' + (z.id || f.id) : [...new Set(to.map((x) => x.toLowerCase()))].sort().join(',');
+    if (!skupiny.has(key)) skupiny.set(key, { key, to, faktury: [], zakaznici: [] });
+    const g = skupiny.get(key); g.faktury.push(f);
+    if (z && !g.zakaznici.includes(z)) g.zakaznici.push(z);
+  }
+  return { skupiny: [...skupiny.values()], bezEmailu };
+}
+
+/** Předmět a text e-mailu pro skupinu faktur (vlastní text zákazníka má přednost, když je ve skupině jediný). */
+export function textSkupiny(s, g, podpis) {
+  const z = g.zakaznici.length === 1 ? g.zakaznici[0] : null;
+  const extra = {
+    osloveni: g.zakaznici.map((x) => x.osloveni).find(Boolean) || '',
+    mista: [...new Set(g.zakaznici.flatMap((x) => (x.misto ? [x.misto] : [])))].sort((a, b) => a.localeCompare(b, 'cs', { numeric: true })),
+    podpis,
+  };
+  return {
+    predmet: fillTemplate((z?.emailPredmet) || s.data.emailPredmet || VYCHOZI_PREDMET, g.faktury, s.data, extra),
+    text: fillTemplate((z?.emailText) || s.data.emailText || VYCHOZI_TEXT, g.faktury, s.data, extra),
+  };
+}
+
+/** Šablony, ze kterých v daném měsíci ještě nevznikl koncept ani faktura (smazaný koncept se počítá jako vyřízený). */
+export function sablonyKVytvoreni(s, mesic, aktivni = s.sablony.filter((t) => !t.smazano && jeKFakturaci(t, mesic))) {
+  const hotove = new Set(s.faktury.filter((f) => f.sablonaMesic === mesic).map((f) => f.sablonaId));
+  // faktura vystavená jinak (ručně, z vyfakturuj.cz) pro stejného zákazníka ve stejném měsíci na stejnou částku se počítá jako vyřízená
+  const jinak = s.faktury.filter((f) => !f.smazano && !f.sablonaId && f.stav !== 'stornovana' && (f.datumVystaveni || '').startsWith(mesic));
+  return aktivni.filter((t) => !hotove.has(t.id) && !jinak.some((f) => f.zakaznikId === t.zakaznikId && Math.abs(Number(f.celkem) - soucet(t.polozky)) < 0.005));
+}
+
+/** Automatická příprava: koncepty ze šablon, jejichž den vystavení v tomto měsíci už nastal. Vrací počet nových konceptů. */
+export async function pripravitMesic(ctx, s, dnes = today()) {
+  await loadDocs(ctx, s);
+  const mesic = dnes.slice(0, 7);
+  const k = sablonyKVytvoreni(s, mesic).filter((t) => konceptZeSablony(s, t, mesic).datumVystaveni <= dnes);
+  if (!k.length) return 0;
+  await loadDocs(ctx, s, true);
+  const znovu = new Set(sablonyKVytvoreni(s, mesic).map((t) => t.id));
+  let n = 0;
+  for (const t of k) {
+    if (!znovu.has(t.id)) continue;
+    const f = konceptZeSablony(s, t, mesic);
+    f.historie = [{ at: new Date().toISOString(), by: ctx.state.auth.email, akce: `koncept automaticky připraven ze šablony za ${mesicNazev(mesic)}` }];
+    await saveDoc(ctx, s, 'fa', f); n++;
+  }
+  if (n) { await ctx.audit(s.id, 'mesic.koncepty', `${n} konceptů za ${mesic} připraveno automaticky`); await loadDocs(ctx, s, true); }
+  return n;
+}
+
+/** Co v aktuálním měsíci čeká na schválení: koncepty a e-maily k odeslání. */
+export function kSchvaleni(s, mesic) {
+  const vMesici = (f) => !f.smazano && (f.sablonaMesic === mesic || (f.datumVystaveni || '').startsWith(mesic));
+  const koncepty = s.faktury.filter((f) => vMesici(f) && f.stav === 'koncept').length;
+  const neodeslane = s.faktury.filter((f) => vMesici(f) && f.stav !== 'koncept' && f.typ !== 'opravny' && f.stav !== 'stornovana' && f.zdroj !== 'vyfakturuj' && !(f.odeslano || []).length);
+  return { mesic, koncepty, emaily: emailSkupiny(s, neodeslane).skupiny.length };
 }
 
 // ---------------------------------------------------------------- ŠABLONY
@@ -192,7 +266,8 @@ export async function viewSablona(main, ctx) {
         <label>Opakování<select name="perioda">${Object.entries(PERIODA).map(([k, l]) => `<option value="${k}" ${t.perioda === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Den vystavení<input name="den" type="number" min="1" max="31" value="${esc(t.den)}"></label>
         <label>Fakturuje se<select name="obdobi">${Object.entries(OBDOBI).map(([k, l]) => `<option value="${k}" ${t.obdobi === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <label>Splatnost (dní)<input name="splatnostDni" type="number" min="0" max="120" value="${esc(t.splatnostDni ?? '')}"></label>
+        <label>Splatnost (dní)<input name="splatnostDni" type="number" min="0" max="120" value="${esc(t.splatnostDni ?? '')}" ${t.splatnostKonec ? 'disabled' : ''}></label>
+        <label class="inline"><input type="checkbox" name="splatnostKonec" ${t.splatnostKonec ? 'checked' : ''}> do konce měsíce</label>
       </div>
       <div class="row">
         <label>Platí od (měsíc)<input name="platnostOd" type="month" value="${esc(t.platnostOd || '')}"></label>
@@ -214,11 +289,12 @@ export async function viewSablona(main, ctx) {
   const read = () => {
     const d = new FormData(form);
     Object.assign(t, { zakaznikId: d.get('zakaznikId'), typ: d.get('typ'), perioda: d.get('perioda'), den: Math.max(1, Math.min(31, Number(d.get('den') || 1))), obdobi: d.get('obdobi'),
-      splatnostDni: d.get('splatnostDni') === '' ? null : Number(d.get('splatnostDni')), platnostOd: d.get('platnostOd') || '', platnostDo: d.get('platnostDo') || '', aktivni: d.get('aktivni') === 'on',
+      splatnostDni: (d.get('splatnostDni') ?? '') === '' ? (t.splatnostDni ?? null) : Number(d.get('splatnostDni')), splatnostKonec: d.get('splatnostKonec') === 'on', platnostOd: d.get('platnostOd') || '', platnostDo: d.get('platnostDo') || '', aktivni: d.get('aktivni') === 'on',
       uvod: d.get('uvod').trim(), poznamka: d.get('poznamka').trim(), polozky: readItems() });
   };
   const refresh = () => {
     read();
+    form.splatnostDni.disabled = !!t.splatnostKonec;
     items.querySelectorAll('tr').forEach((tr, i) => { tr.querySelector('.rc').textContent = czk(radkaCelkem(t.polozky[i])); });
     main.querySelector('#total').textContent = czk(soucet(t.polozky));
     let m = t.platnostOd && t.platnostOd > nyni ? t.platnostOd : nyni; let n = 0;
@@ -255,13 +331,15 @@ export async function viewMesic(main, ctx) {
   const st = ctx.state.ui.mesic ||= { mesic: ym(new Date().getFullYear(), new Date().getMonth() + 1) };
   const mesic = st.mesic;
   const aktivni = s.sablony.filter((t) => !t.smazano && jeKFakturaci(t, mesic));
-  const zMesice = s.faktury.filter((f) => !f.smazano && f.sablonaMesic === mesic);
-  const hotoveSab = new Set(zMesice.map((f) => f.sablonaId));
-  const kVytvoreni = aktivni.filter((t) => !hotoveSab.has(t.id));
+  const kVytvoreni = sablonyKVytvoreni(s, mesic, aktivni);
   const koncepty = s.faktury.filter((f) => !f.smazano && f.stav === 'koncept' && (f.sablonaMesic === mesic || (f.datumVystaveni || '').startsWith(mesic)));
   const vystavene = s.faktury.filter((f) => !f.smazano && f.stav !== 'koncept' && f.typ !== 'opravny' && (f.sablonaMesic === mesic || (f.datumVystaveni || '').startsWith(mesic)))
     .sort((a, b) => String(a.cislo).localeCompare(String(b.cislo)));
   const neodeslane = vystavene.filter((f) => !(f.odeslano || []).length && f.stav !== 'stornovana' && f.zdroj !== 'vyfakturuj');
+  const skup = emailSkupiny(s, neodeslane);
+  const podpis = ctx.state.user?.podpis || '';
+  ctx.state.kSchvaleni ||= {};
+  if (mesic === today().slice(0, 7)) ctx.state.kSchvaleni[s.id] = kSchvaleni(s, mesic);
   const sum = (l) => czk(round2(l.reduce((x, f) => x + Number(f.celkem || 0), 0)));
   main.insertAdjacentHTML('beforeend', `
     <div class="head-row"><h1>Měsíční fakturace – ${esc(ctx.subjectName(s))}</h1>
@@ -277,19 +355,31 @@ export async function viewMesic(main, ctx) {
         ${koncepty.map((f) => `<tr><td><input type="checkbox" class="c2" value="${esc(f.id)}" checked></td><td>${esc(f.odberatel?.nazev)}</td><td class="small">${esc((f.polozky || []).map((p) => p.popis).join(' · '))}</td><td class="num">${czk(f.celkem)}</td><td>${datum(f.datumVystaveni)}</td><td><button class="small" data-open="${esc(f.id)}">Upravit</button></td></tr>`).join('')}
       </tbody></table>${rw ? '<button class="primary" id="btn-vystavit">Vystavit vybrané</button>' : ''}` : '<p>Žádné koncepty.</p>'}
     </section>
-    <section class="box"><h2>3. Vystavené v ${esc(mesicNazev(mesic))} (${vystavene.length}${vystavene.length ? ', ' + sum(vystavene) : ''})</h2>
-      ${vystavene.length ? `<table class="grid"><thead><tr><th>${neodeslane.length ? '<input type="checkbox" id="all3" checked>' : ''}</th><th>Číslo</th><th>Odběratel</th><th>E-mail</th><th class="num">Částka</th><th>Stav</th><th>Odesláno</th></tr></thead><tbody>
-        ${vystavene.map((f) => { const em = prijemci(s, f); const can = neodeslane.includes(f); return `<tr><td>${can && em.length ? `<input type="checkbox" class="c3" value="${esc(f.id)}" checked>` : ''}</td><td><button class="link" data-open="${esc(f.id)}">${esc(f.cislo)}</button></td><td>${esc(f.odberatel?.nazev)}</td><td class="small">${em.length ? esc(em.join(', ')) : (can ? '<span class="warn">chybí e-mail</span>' : '')}</td><td class="num">${czk(f.celkem)}</td><td>${stavPill(f)}</td><td class="small">${(f.odeslano || []).length ? esc(new Date(f.odeslano.at(-1).at).toLocaleDateString('cs-CZ')) : ''}</td></tr>`; }).join('')}
-      </tbody></table>${rw && neodeslane.some((f) => prijemci(s, f).length) ? '<button class="primary" id="btn-odeslat">Odeslat vybrané e-mailem</button>' : ''}
-      ${neodeslane.some((f) => !prijemci(s, f).length) ? '<p class="muted small">U zákazníků bez e-mailu doplňte adresu v Adresáři.</p>' : ''}` : '<p>Zatím nic.</p>'}
+    <section class="box"><h2>3. E-maily k odeslání (${skup.skupiny.length})</h2>
+      ${skup.skupiny.length ? `<p class="muted small">Faktury se stejnými příjemci jdou v jednom e-mailu. Odešle se z účtu ${esc(ctx.state.auth.email)}${s.data.emailKopie !== false ? ', kopie vám do schránky' : ''}. Text lze před odesláním upravit.</p>
+        <div class="maily">${skup.skupiny.map((g, i) => { const tx = textSkupiny(s, g, podpis); return `<div class="mail-card" data-g="${i}">
+          <div class="row space"><label class="inline"><input type="checkbox" class="c3" value="${i}" checked> <strong>${esc(g.to.join(', '))}</strong></label><span class="muted small">${g.faktury.length} ${g.faktury.length === 1 ? 'faktura' : g.faktury.length < 5 ? 'faktury' : 'faktur'} · ${sum(g.faktury)}</span></div>
+          <div class="small">${g.faktury.map((f) => `<button class="link" data-open="${esc(f.id)}">${esc(f.cislo)}</button> ${esc(f.odberatel?.nazev || '')}`).join('<br>')}</div>
+          <details><summary>Předmět: ${esc(tx.predmet)}</summary>
+            <label>Komu (oddělte čárkou)<input class="m-to" value="${esc(g.to.join(', '))}"></label>
+            <label>Předmět<input class="m-predmet" value="${esc(tx.predmet)}"></label>
+            <label>Text<textarea class="m-text" rows="9">${esc(tx.text)}</textarea></label></details>
+        </div>`; }).join('')}</div>
+        ${rw ? `<button class="primary" id="btn-odeslat">Odeslat vybrané e-maily</button>` : ''}` : `<p>${neodeslane.length ? '' : 'Žádné vystavené faktury k odeslání.'}</p>`}
+      ${skup.bezEmailu.length ? `<p class="warn small">Bez e-mailu (doplňte v Adresáři): ${skup.bezEmailu.map((f) => `<button class="link" data-open="${esc(f.id)}">${esc(f.cislo)}</button> ${esc(f.odberatel?.nazev || '')}`).join(', ')}</p>` : ''}
       <p id="progress" class="muted"></p>
+    </section>
+    <section class="box"><h2>Vystavené v ${esc(mesicNazev(mesic))} (${vystavene.length}${vystavene.length ? ', ' + sum(vystavene) : ''})</h2>
+      ${vystavene.length ? `<table class="grid"><thead><tr><th>Číslo</th><th>Odběratel</th><th>E-mail</th><th class="num">Částka</th><th>Stav</th><th>Odesláno</th></tr></thead><tbody>
+        ${vystavene.map((f) => { const em = prijemci(s, f); return `<tr><td><button class="link" data-open="${esc(f.id)}">${esc(f.cislo)}</button></td><td>${esc(f.odberatel?.nazev)}</td><td class="small">${esc(em.join(', '))}</td><td class="num">${czk(f.celkem)}</td><td>${stavPill(f)}</td><td class="small">${(f.odeslano || []).length ? esc(new Date(f.odeslano.at(-1).at).toLocaleDateString('cs-CZ')) : ''}</td></tr>`; }).join('')}
+      </tbody></table>` : '<p>Zatím nic.</p>'}
     </section>`);
   const setM = (m) => { st.mesic = m; ctx.render(); };
   main.querySelector('#mesic').onchange = (e) => e.target.value && setM(e.target.value);
   main.querySelector('#prev').onclick = () => setM(posunMesic(mesic, -1));
   main.querySelector('#next').onclick = () => setM(posunMesic(mesic, 1));
   main.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => ctx.go('faktura', b.dataset.open)));
-  for (const [all, cls] of [['#all1', '.c1'], ['#all2', '.c2'], ['#all3', '.c3']]) { const a = main.querySelector(all); if (a) a.onchange = () => main.querySelectorAll(cls).forEach((c) => (c.checked = a.checked)); }
+  for (const [all, cls] of [['#all1', '.c1'], ['#all2', '.c2']]) { const a = main.querySelector(all); if (a) a.onchange = () => main.querySelectorAll(cls).forEach((c) => (c.checked = a.checked)); }
   const checked = (cls) => [...main.querySelectorAll(cls + ':checked')].map((c) => c.value);
   const progress = main.querySelector('#progress');
   const b1 = main.querySelector('#btn-koncepty');
@@ -308,36 +398,44 @@ export async function viewMesic(main, ctx) {
     await loadDocs(ctx, s, true);
     const cisla = [];
     try {
-      for (const id of ids) { const f = s.faktury.find((x) => x.id === id); if (!f || f.stav !== 'koncept') continue; cisla.push(await vystavit(ctx, s, f)); progress.textContent = `Vystaveno ${cisla.length} / ${ids.length}…`; }
+      // čísla po sobě pro faktury, které půjdou v jednom e-mailu (stejní příjemci), uvnitř podle odběratele
+      const klic = (f) => [prijemci(s, f).map((x) => x.toLowerCase()).sort().join(',') || '~', f.odberatel?.nazev || ''].join('|');
+      const poradi = ids.map((id) => s.faktury.find((x) => x.id === id)).filter((f) => f && f.stav === 'koncept').sort((a, b) => klic(a).localeCompare(klic(b), 'cs', { numeric: true }));
+      for (const f of poradi) { cisla.push(await vystavit(ctx, s, f)); progress.textContent = `Vystaveno ${cisla.length} / ${ids.length}…`; }
     } catch (e) { ctx.toast(e.message, 'err'); }
     await loadDocs(ctx, s, true); ctx.flash(`Vystaveno ${cisla.length} faktur${cisla.length ? ` (${cisla[0]} – ${cisla.at(-1)})` : ''}.`); ctx.render();
   };
   const b3 = main.querySelector('#btn-odeslat');
   if (b3) b3.onclick = async () => {
-    const ids = checked('.c3'); if (!ids.length) return;
-    const vybrane = vystavene.filter((f) => ids.includes(f.id));
-    if (!confirm(`Odeslat ${vybrane.length} faktur e-mailem z účtu ${ctx.state.auth.email}?`)) return;
+    const vybrane = checked('.c3').map(Number).map((i) => {
+      const card = main.querySelector(`.mail-card[data-g="${i}"]`);
+      return { g: skup.skupiny[i], to: card.querySelector('.m-to').value.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean), predmet: card.querySelector('.m-predmet').value, text: card.querySelector('.m-text').value };
+    });
+    if (!vybrane.length) return;
+    const spatne = vybrane.find((v) => !v.to.length || v.to.some((a) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a)));
+    if (spatne) return ctx.toast(`Zkontrolujte adresy: ${spatne.to.join(', ') || '(prázdné)'}`, 'err');
+    const pocetF = vybrane.reduce((a, v) => a + v.g.faktury.length, 0);
+    if (!confirm(`Odeslat ${vybrane.length} e-mailů s ${pocetF} fakturami z účtu ${ctx.state.auth.email}?`)) return;
     b3.disabled = true;
     try { await gmailToken(ctx.state.auth.email); } catch (e) { b3.disabled = false; return ctx.toast(e.message, 'err'); }
     let ok = 0; const chyby = [];
-    for (const f of vybrane) {
-      try {
-        await odeslatFakturu(ctx, s, f, { to: prijemci(s, f), predmet: fillTemplate(s.data.emailPredmet || VYCHOZI_PREDMET, f, s.data), text: fillTemplate(s.data.emailText || VYCHOZI_TEXT, f, s.data) });
-        ok++; progress.textContent = `Odesláno ${ok} / ${vybrane.length}…`;
-      } catch (e) { chyby.push(`${f.cislo}: ${e.message}`); }
+    for (const v of vybrane) {
+      try { await odeslatEmail(ctx, s, v.g.faktury, v); ok++; progress.textContent = `Odesílám ${ok} / ${vybrane.length}…`; } catch (e) { chyby.push(`${v.to.join(', ')}: ${e.message}`); }
     }
     await loadDocs(ctx, s, true);
-    ctx.flash(`Odesláno ${ok} faktur.${chyby.length ? ' Chyby: ' + chyby.join('; ') : ''}`, chyby.length ? 'err' : 'ok'); ctx.render();
+    ctx.flash(`Odesláno ${ok} ${ok === 1 ? 'e-mail' : ok < 5 ? 'e-maily' : 'e-mailů'}.${chyby.length ? ' Chyby: ' + chyby.join('; ') : ''}`, chyby.length ? 'err' : 'ok'); ctx.render();
   };
 }
 
 // ---------------------------------------------------------------- odeslání jedné faktury (z detailu)
 export function odeslatDialog(box, ctx, s, f) {
   const to = prijemci(s, f);
+  const z = s.zakaznici.find((x) => x.id === f.zakaznikId);
+  const tx = textSkupiny(s, { to, faktury: [f], zakaznici: z ? [z] : [] }, ctx.state.user?.podpis || '');
   box.innerHTML = `<h2>Odeslat e-mailem</h2>
     <label>Komu (oddělte čárkou)<input name="to" value="${esc(to.join(', '))}"></label>
-    <label>Předmět<input name="predmet" value="${esc(fillTemplate(s.data.emailPredmet || VYCHOZI_PREDMET, f, s.data))}"></label>
-    <label>Text<textarea name="text" rows="8">${esc(fillTemplate(s.data.emailText || VYCHOZI_TEXT, f, s.data))}</textarea></label>
+    <label>Předmět<input name="predmet" value="${esc(tx.predmet)}"></label>
+    <label>Text<textarea name="text" rows="9">${esc(tx.text)}</textarea></label>
     <p class="muted small">Odešle se z účtu ${esc(ctx.state.auth.email)} s fakturou v PDF${s.data.emailKopie !== false ? ', kopie vám do schránky' : ''}.</p>
     <button class="primary" id="btn-send">Odeslat</button>`;
   box.classList.remove('hidden');

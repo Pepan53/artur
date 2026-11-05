@@ -1,12 +1,12 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.5.14';
-import { currentTheme, toggleTheme } from './theme.js?v=0.5.14';
-import * as C from './crypto.js?v=0.5.14';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.5.14';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport } from './views-fakturace.js?v=0.5.14';
-import { viewSablony, viewSablona, viewMesic } from './views-opakovani.js?v=0.5.14';
-import { viewBanka } from './views-banka.js?v=0.5.14';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.5.14';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.6.0';
+import { currentTheme, toggleTheme } from './theme.js?v=0.6.0';
+import * as C from './crypto.js?v=0.6.0';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.6.0';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport, today } from './views-fakturace.js?v=0.6.0';
+import { viewSablony, viewSablona, viewMesic, pripravitMesic, kSchvaleni, MESICE } from './views-opakovani.js?v=0.6.0';
+import { viewBanka } from './views-banka.js?v=0.6.0';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.6.0';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -62,11 +62,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.5.14');
+      const { createDemoStore } = await import('./store-demo.js?v=0.6.0');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.5.14');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.6.0');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {
@@ -256,9 +256,11 @@ function renderUnlock(root) {
       state.privateKey = await C.unlockUserKeys(state.user, new FormData(e.target).get('pw'));
     } catch (err) { flash(err.message, 'err'); return render(); }
     await loadSubjects();
+    const prvni = !state.vychoziHotovo;
     otevriVychozi();
     resetIdle();
     render();
+    if (prvni) pripravitVse();
   };
 }
 
@@ -293,6 +295,31 @@ async function loadSubjects() {
   if (!subjectById(state.current)) state.current = out.find((s) => s.access === 'ok')?.id || out[0]?.id || null;
 }
 
+/** Lišta „ke schválení“: koncepty a e-maily aktuálního měsíce ve všech subjektech, kde smím psát. */
+function upozorneniHtml() {
+  const rows = Object.entries(state.kSchvaleni || {}).filter(([, k]) => k.koncepty || k.emaily).map(([sid, k]) => {
+    const x = subjectById(sid); if (!x) return '';
+    const [y, m] = k.mesic.split('-').map(Number);
+    const co = [k.koncepty ? `${k.koncepty} ${k.koncepty === 1 ? 'koncept' : k.koncepty < 5 ? 'koncepty' : 'konceptů'} ke kontrole` : '', k.emaily ? `${k.emaily} ${k.emaily === 1 ? 'e-mail' : k.emaily < 5 ? 'e-maily' : 'e-mailů'} k odeslání` : ''].filter(Boolean).join(', ');
+    return `<div class="schvaleni"><span>📋 <strong>${esc(subjectName(x))}</strong> – fakturace ${MESICE[m - 1]} ${y}: ${co}</span><button class="small primary" data-schvalit="${esc(sid)}">Otevřít</button></div>`;
+  }).join('');
+  return rows;
+}
+
+/** Na pozadí připraví koncepty ze šablon (1. dne v měsíci a dál) ve všech subjektech, kde smím psát, a spočítá, co čeká na schválení. */
+async function pripravitVse() {
+  state.kSchvaleni = {};
+  for (const x of state.subjects) {
+    if (x.access !== 'ok' || x.meta?.druh === 'adresar' || !['vlastnik', 'ucetni'].includes(myRole(x))) continue;
+    try {
+      const n = await pripravitMesic(ctx, x);
+      state.kSchvaleni[x.id] = kSchvaleni(x, today().slice(0, 7));
+      if (n) toast(`${subjectName(x)}: připraveno ${n} konceptů faktur ke kontrole.`);
+    } catch (e) { console.warn('příprava fakturace', x.id, e); }
+  }
+  if (state.privateKey) render();
+}
+
 /** Po přihlášení otevře faktury výchozího subjektu (jen poprvé v relaci, ne po zamčení). */
 function otevriVychozi() {
   if (state.vychoziHotovo) return;
@@ -324,6 +351,7 @@ const ctx = {
   needSubject: (main) => needSubject(main),
   subjectName: (x) => subjectName(x),
   myRole: (x) => myRole(x),
+  saveSubjectData: async (x, data) => { await saveSubjectData(x, data); x.data = data; },
   go: (view, id = null) => { state.view = view; state.detailId = id; render(); window.scrollTo(0, 0); },
 };
 
@@ -368,7 +396,7 @@ function renderMain(root) {
   </header>
   <div class="layout">
     <nav class="side">${navHtml}</nav>
-    <main id="main">${flashHtml()}</main>
+    <main id="main">${upozorneniHtml()}${flashHtml()}</main>
   </div>`;
   root.querySelector('#sel-subject').onchange = (e) => { state.current = e.target.value; render(); };
   if (isDemo()) window.arturLock = () => lock('Aplikace je zamčená.'); // jen pro testy v demu
@@ -376,6 +404,7 @@ function renderMain(root) {
   root.querySelector('#btn-theme').onclick = () => { toggleTheme(); render(); };
   root.querySelectorAll('nav.side button[data-view]').forEach((b) => (b.onclick = () => { state.view = b.dataset.view; state.detailId = null; render(); }));
   root.querySelector('#nav-nastaveni').onclick = () => { state.navNastaveni = !state.navNastaveni; render(); };
+  root.querySelectorAll('[data-schvalit]').forEach((b) => (b.onclick = () => { state.current = b.dataset.schvalit; state.ui.mesic = null; ctx.go('mesic'); }));
   const main = root.querySelector('#main');
   const views = { faktury: (m) => viewFaktury(m, ctx), faktura: (m) => viewFaktura(m, ctx), adresar: (m) => viewAdresar(m, ctx), zakaznik: (m) => viewZakaznik(m, ctx), import: (m) => viewImport(m, ctx), mesic: (m) => viewMesic(m, ctx), banka: (m) => viewBanka(m, ctx), sablony: (m) => viewSablony(m, ctx), sablona: (m) => viewSablona(m, ctx), prehled: viewPrehled, subjekt: viewSubjekt, clenove: viewClenove, klice: viewKlice, historie: viewHistorie, ucet: viewUcet, 'admin-uzivatele': viewAdminUsers, 'admin-novy': viewAdminNew };
   const BEZ_FAKTUR = ['faktury', 'faktura', 'import', 'mesic', 'sablony', 'sablona', 'banka'];
@@ -497,7 +526,7 @@ async function viewSubjekt(main) {
       <h2>E-mail s fakturou</h2>
       <label>Předmět<input name="emailPredmet" value="${esc(d.emailPredmet || VYCHOZI_PREDMET)}"></label>
       <label>Text e-mailu<textarea name="emailText" rows="8">${esc(d.emailText || VYCHOZI_TEXT)}</textarea></label>
-      <p class="muted small">Proměnné: {cislo}, {castka}, {splatnost}, {vystaveno}, {ucet}, {vs}, {dodavatel}, {odberatel}.</p>
+      <p class="muted small">Proměnné: {osloveni} (z adresáře, jinak „Dobrý den“), {fakturu} / {Faktura} (fakturu × faktury podle počtu), {mesic} {rok} (fakturované období), {v_domech} („v domě Vajgar 571“ / „v domech …“ podle místa plnění v adresáři), {seznam_faktur}, {cislo}, {castka}, {celkem}, {pocet}, {splatnost}, {vystaveno}, {ucet}, {vs}, {odberatel}, {dodavatel}, {podpis} (podpis odesílatele z Můj účet). Faktury se stejnými příjemci se posílají v jednom e-mailu.</p>
       <label class="inline"><input type="checkbox" name="emailKopie" ${d.emailKopie !== false ? 'checked' : ''}> Posílat kopii (skrytě) odesílateli</label>
       <p class="muted small">DPH: neplátce (text „Nejsem plátce DPH“ na faktuře).</p>
       </fieldset>
@@ -778,7 +807,19 @@ async function viewUcet(main) {
       <label>Nové heslo znovu<input name="p2" type="password" required minlength="12" autocomplete="new-password"></label>
       <button class="primary">Změnit heslo</button>
     </form>
-    <p class="muted small">Při změně hesla zůstává přístup ke všem subjektům zachován.</p>`);
+    <p class="muted small">Při změně hesla zůstává přístup ke všem subjektům zachován.</p>
+    <h2>Podpis v e-mailech</h2>
+    <form id="f-podpis" class="stack narrow-form">
+      <label>Podpis (proměnná {podpis} v textu e-mailu; {dodavatel} = název subjektu)<textarea name="podpis" rows="5" placeholder="S přátelským pozdravem&#10;Jméno Příjmení&#10;{dodavatel}&#10;+420 …">${esc(state.user.podpis || '')}</textarea></label>
+      <button class="primary">Uložit podpis</button>
+    </form>`);
+  main.querySelector('#f-podpis').onsubmit = async (e) => {
+    e.preventDefault();
+    const podpis = new FormData(e.target).get('podpis').replace(/\s+$/, '');
+    await state.store.putUser(state.auth.email, { podpis });
+    state.user = { ...state.user, podpis };
+    toast('Podpis uložen.');
+  };
   main.querySelector('#f-chpw').onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);

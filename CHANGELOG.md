@@ -3,6 +3,15 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.6.0 (2026-11-05)
+- Měsíční fakturace: e-maily se seskupují podle příjemců – faktury se stejnými adresami odejdou v jednom e-mailu se všemi PDF v příloze. Před odesláním je vidět, komu co půjde, text lze upravit a odeslat vybrané e-maily najednou.
+- ARTUR sám připraví koncepty ze šablon (od dne vystavení v měsíci) při prvním otevření po přihlášení, ve všech subjektech, kde uživatel smí fakturovat; nahoře ukáže lištu „ke kontrole / k odeslání“. Nic nevystaví ani neodešle bez potvrzení. Měsíc už vyfakturovaný jinak (např. ve vyfakturuj.cz) se nezdvojí.
+- Faktury, které půjdou v jednom e-mailu, dostanou při hromadném vystavení čísla po sobě.
+- Adresář: oslovení, místo plnění (krátce pro e-mail), „posílat zvlášť“ a vlastní předmět/text e-mailu u zákazníka.
+- Šablona e-mailu: nové proměnné {osloveni}, {fakturu}/{Faktura}, {mesic} {rok}, {v_domech}, {seznam_faktur}, {celkem}, {pocet}, {podpis}. Podpis odesílatele v Můj účet.
+- Šablona opakované faktury: splatnost „do konce měsíce“.
+- Import „ARTUR-adresar-….json“: nastaví e-maily, oslovení a místa zákazníků podle skutečně odeslaných e-mailů a volitelně text e-mailu subjektu.
+
 ## 0.5.14 (2026-11-05)
 - Oprava textu potvrzení při vystavení faktury (i hromadném): vystavenou fakturu lze upravit, hláška už netvrdí opak.
 

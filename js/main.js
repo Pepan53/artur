@@ -1,5 +1,5 @@
-import { applyTheme } from './theme.js?v=0.5.14';
-import { start } from './app.js?v=0.5.14';
+import { applyTheme } from './theme.js?v=0.6.0';
+import { start } from './app.js?v=0.6.0';
 
 applyTheme();
 start().catch((e) => {

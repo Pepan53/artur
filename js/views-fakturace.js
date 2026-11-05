@@ -1,8 +1,8 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.5.14';
-import { aresLookup, icoValid } from './czech.js?v=0.5.14';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.14';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.14';
+import * as C from './crypto.js?v=0.6.0';
+import { aresLookup, icoValid } from './czech.js?v=0.6.0';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.0';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.0';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -133,6 +133,16 @@ export async function viewZakaznik(main, ctx) {
       <label>Ulice a číslo<input name="ulice" value="${esc(z.ulice)}"></label>
       <div class="row"><label>PSČ<input name="psc" value="${esc(z.psc)}" maxlength="6"></label><label class="grow">Obec<input name="obec" value="${esc(z.obec)}"></label><label>Země<input name="zeme" value="${esc(z.zeme || 'Česká republika')}"></label></div>
       <label>E-maily pro zasílání faktur (oddělte čárkou)<input name="emaily" value="${esc((z.emaily || []).join(', '))}"></label>
+      <div class="row">
+        <label class="grow">Oslovení v e-mailu<input name="osloveni" value="${esc(z.osloveni)}" placeholder="např. Dobrý den paní Jandová (prázdné = Dobrý den)"></label>
+        <label class="grow">Místo plnění – krátce pro e-mail<input name="misto" value="${esc(z.misto)}" placeholder="např. Vajgar 571"></label>
+      </div>
+      <label class="inline"><input type="checkbox" name="samostatne" ${z.samostatne ? 'checked' : ''}> Posílat faktury zvlášť (neslučovat s jinými zákazníky se stejným e-mailem)</label>
+      <details ${z.emailPredmet || z.emailText ? 'open' : ''}><summary>Vlastní text e-mailu pro tohoto zákazníka (nepovinné)</summary>
+        <label>Předmět<input name="emailPredmet" value="${esc(z.emailPredmet)}" placeholder="prázdné = podle Údajů subjektu"></label>
+        <label>Text<textarea name="emailText" rows="6" placeholder="prázdné = podle Údajů subjektu">${esc(z.emailText)}</textarea></label>
+        <p class="muted small">Použije se, když e-mail obsahuje faktury jen tohoto zákazníka. Proměnné jako v Údajích subjektu.</p>
+      </details>
       <div class="row"><label>Splatnost (dní, prázdné = výchozí)<input name="splatnost" type="number" min="0" max="120" value="${esc(z.splatnost ?? '')}"></label></div>
       <label>Známé účty zákazníka (pro párování plateb, oddělte čárkou)<input name="ucty" value="${esc((z.ucty || []).join(', '))}" placeholder="např. 604232339/0800"></label>
       <label>Poznámka<input name="poznamka" value="${esc(z.poznamka)}"></label>
@@ -183,6 +193,8 @@ export async function viewZakaznik(main, ctx) {
     const obj = {
       ...z, nazev: f.get('nazev').trim(), ico, dic: f.get('dic').trim(), kontakt: f.get('kontakt').trim(), ulice: f.get('ulice').trim(),
       psc: f.get('psc').trim(), obec: f.get('obec').trim(), zeme: f.get('zeme').trim() || 'Česká republika', emaily: list(f.get('emaily')),
+      osloveni: f.get('osloveni').trim().replace(/,$/, ''), misto: f.get('misto').trim(), samostatne: f.get('samostatne') === 'on',
+      emailPredmet: f.get('emailPredmet').trim(), emailText: f.get('emailText').trim(),
       splatnost: f.get('splatnost') === '' ? null : Number(f.get('splatnost')), ucty: list(f.get('ucty')), poznamka: f.get('poznamka').trim(), archiv: f.get('archiv') === 'on',
     };
     if (!obj.zalozeno) { obj.zalozeno = new Date().toISOString(); obj.zalozil = ctx.state.auth.email; }
@@ -461,7 +473,7 @@ function detail(main, ctx, s, f) {
     await loadDocs(ctx, s, true); ctx.go('faktura', f.id);
   }));
   const mb = main.querySelector('#btn-mail');
-  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.5.14'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
+  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.6.0'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
   const eb = main.querySelector('#btn-edit-prev');
   if (eb) eb.onclick = () => editPrevzata(main.querySelector('#edit-box'), ctx, s, f);
   const dup = main.querySelector('#btn-dup');
@@ -510,7 +522,7 @@ export async function viewImport(main, ctx) {
   if (!canWrite(ctx, s)) { main.insertAdjacentHTML('beforeend', '<h1>Import z vyfakturuj.cz</h1><p>Import může provést vlastník nebo účetní.</p>'); return; }
   main.insertAdjacentHTML('beforeend', `
     <h1>Import z vyfakturuj.cz – ${esc(ctx.subjectName(s))}</h1>
-    <p>Vyberte soubor <code>ARTUR-migrace-….json</code> (faktury) nebo <code>ARTUR-uhrady-….json</code> (data úhrad) ze složky <strong>FAKTUR\\Migrace</strong>. Soubor vznikl z PDF exportů vyfakturuj.cz. Data se v prohlížeči zašifrují a teprve pak uloží. Faktury, které už v ARTURovi jsou (stejné číslo), se přeskočí, import lze tedy opakovat.</p>
+    <p>Vyberte soubor <code>ARTUR-migrace-….json</code> (faktury) nebo <code>ARTUR-uhrady-….json</code> (data úhrad) nebo <code>ARTUR-adresar-….json</code> (e-maily a oslovení do adresáře) ze složky <strong>FAKTUR\\Migrace</strong>. Soubor vznikl z PDF exportů vyfakturuj.cz. Data se v prohlížeči zašifrují a teprve pak uloží. Faktury, které už v ARTURovi jsou (stejné číslo), se přeskočí, import lze tedy opakovat.</p>
     <input type="file" id="file" accept=".json,application/json">
     <div id="preview"></div>`);
   const prev = main.querySelector('#preview');
@@ -519,6 +531,7 @@ export async function viewImport(main, ctx) {
     let data;
     try { data = JSON.parse(await file.text()); } catch { return ctx.toast('Soubor není platný JSON.', 'err'); }
     if (data.artur === 'uhrady-vyfakturuj') return nahledUhrad(prev, ctx, s, data);
+    if (data.artur === 'adresar-doplneni') return nahledAdresare(prev, ctx, s, data);
     if (data.artur !== 'migrace-vyfakturuj') return ctx.toast('Toto není migrační soubor ARTURa.', 'err');
     if (data.subjekt?.ico && s.data.ico && data.subjekt.ico !== s.data.ico) return ctx.toast(`Soubor patří k IČO ${data.subjekt.ico} (${data.subjekt.nazev}), ne k vybranému subjektu.`, 'err');
     if (data.subjekt?.nazev && !data.subjekt.ico && norm(data.subjekt.nazev) !== norm(s.data.nazev)) {
@@ -701,6 +714,42 @@ async function prevestDoSpolecneho(ctx, s, btn, stav) {
 }
 
 // ---------------------------------------------------------------- úhrady převzatých faktur (ze seznamu ve vyfakturuj.cz)
+/** Doplnění adresáře (e-maily, oslovení, místo plnění, vlastní text e-mailu) a volitelně textu e-mailu subjektu. */
+function nahledAdresare(prev, ctx, s, data) {
+  const cil = s.adresar || s;
+  const plan = []; const nenalezeno = [];
+  for (const d of data.zakaznici || []) {
+    const z = (d.ico && cil.zakaznici.find((x) => x.ico === d.ico && !x.archiv)) || cil.zakaznici.find((x) => !x.archiv && norm(x.nazev) === norm(d.nazev));
+    if (!z) { nenalezeno.push(d.nazev + (d.ico ? ` (IČO ${d.ico})` : '')); continue; }
+    const zm = {}; const popis = [];
+    // e-maily ze souboru odpovídají skutečnému rozesílání → nahradí dosavadní seznam
+    const em = [...new Set((d.emaily || []).map((x) => x.trim().toLowerCase()).filter(Boolean))];
+    const pred = (z.emaily || []).map((x) => x.toLowerCase());
+    if (em.length && (em.length !== pred.length || em.some((x) => !pred.includes(x)))) { zm.emaily = em; popis.push(`e-maily: ${pred.length ? pred.join(', ') + ' → ' : ''}${em.join(', ')}`); }
+    for (const [k, l] of [['osloveni', 'oslovení'], ['misto', 'místo'], ['emailPredmet', 'předmět e-mailu'], ['emailText', 'text e-mailu']]) {
+      if (d[k] && !z[k]) { zm[k] = d[k]; popis.push(`${l}: ${String(d[k]).split('\n')[0].slice(0, 40)}`); }
+    }
+    if (popis.length) plan.push({ z, zm, popis });
+  }
+  const sub = (data.subjekty || []).find((x) => x.ico && x.ico === s.data.ico);
+  prev.innerHTML = `<h2>Doplnění adresáře</h2>
+    <p>Zdroj: ${esc(data.zdroj || '')}. V souboru ${(data.zakaznici || []).length} zákazníků. E-maily se nastaví podle souboru (dosavadní adresy se nahradí); oslovení, místo a vlastní text se jen doplní tam, kde chybí.</p>
+    ${plan.length ? `<table class="grid"><thead><tr><th>Zákazník</th><th>Doplní se</th></tr></thead><tbody>${plan.map((p) => `<tr><td>${esc(p.z.nazev)}</td><td class="small">${esc(p.popis.join(' · '))}</td></tr>`).join('')}</tbody></table>` : '<p class="note">V adresáři už je vše vyplněné.</p>'}
+    ${nenalezeno.length ? `<p class="warn small">V adresáři nenalezeno: ${esc(nenalezeno.join('; '))}</p>` : ''}
+    ${sub ? `<label class="inline"><input type="checkbox" id="chk-sub" checked> Nastavit i předmět a text e-mailu v Údajích subjektu ${esc(ctx.subjectName(s))}</label>
+      <pre class="small note">${esc(sub.emailPredmet)}\n\n${esc(sub.emailText)}</pre>` : ''}
+    ${plan.length || sub ? '<button class="primary" id="btn-adr">Uložit</button>' : ''}`;
+  const b = prev.querySelector('#btn-adr'); if (!b) return;
+  b.onclick = async () => {
+    b.disabled = true; const now = new Date().toISOString(); const me = ctx.state.auth.email;
+    for (const p of plan) await saveZak(ctx, s, { ...p.z, ...p.zm, zmeneno: now, zmenil: me });
+    const chk = prev.querySelector('#chk-sub');
+    if (sub && chk?.checked) await ctx.saveSubjectData(s, { ...s.data, emailPredmet: sub.emailPredmet, emailText: sub.emailText });
+    await ctx.audit(s.id, 'adresar.doplneni', `${plan.length} zákazníků doplněno${sub && chk?.checked ? ', text e-mailu subjektu' : ''}`);
+    await loadDocs(ctx, s, true); ctx.flash(`Adresář doplněn u ${plan.length} zákazníků.${sub && chk?.checked ? ' Text e-mailu subjektu nastaven.' : ''}`); ctx.go('adresar');
+  };
+}
+
 function nahledUhrad(prev, ctx, s, data) {
   if (data.subjekt?.ico && s.data.ico && data.subjekt.ico !== s.data.ico) return ctx.toast(`Soubor patří k IČO ${data.subjekt.ico}, ne k vybranému subjektu.`, 'err');
   const fa = new Map(s.faktury.filter((f) => !f.smazano && f.typ === 'faktura').map((f) => [f.cislo, f]));

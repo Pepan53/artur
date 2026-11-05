@@ -1,7 +1,7 @@
 // ARTUR – odeslání faktur e-mailem přes Gmail API (oprávnění gmail.send) z účtu přihlášeného uživatele.
 // V demo režimu se e-mail jen uloží do localStorage („artur-demo-outbox“).
-import { GOOGLE_CLIENT_ID, isDemo } from './config.js?v=0.5.14';
-import { czk, datum } from './invoices.js?v=0.5.14';
+import { GOOGLE_CLIENT_ID, isDemo } from './config.js?v=0.6.0';
+import { czk, datum } from './invoices.js?v=0.6.0';
 
 let gisLoading = null;
 let token = null; // { value, exp }
@@ -46,10 +46,16 @@ const b64utf8 = (str) => b64(new TextEncoder().encode(str));
 const encHeader = (str) => (/^[\x20-\x7e]*$/.test(str) ? str : `=?UTF-8?B?${b64utf8(str)}?=`);
 const wrap76 = (s) => s.replace(/.{1,76}/g, '$&\r\n');
 
-/** Sestaví zprávu MIME (text + PDF příloha). */
-export async function buildMime({ from, to, cc = [], bcc = [], subject, text, attachment }) {
+/** Sestaví zprávu MIME (text + PDF přílohy). */
+export async function buildMime({ from, to, cc = [], bcc = [], subject, text, attachment, attachments }) {
   const boundary = 'artur_' + Math.random().toString(36).slice(2);
-  const pdf = new Uint8Array(await attachment.blob.arrayBuffer());
+  const prilohy = attachments || (attachment ? [attachment] : []);
+  const casti = [];
+  for (const a of prilohy) {
+    const pdf = new Uint8Array(await a.blob.arrayBuffer());
+    casti.push(`--${boundary}`, `Content-Type: application/pdf; name="${encHeader(a.name)}"`, `Content-Disposition: attachment; filename="${encHeader(a.name)}"`,
+      'Content-Transfer-Encoding: base64', '', wrap76(b64(pdf)));
+  }
   const lines = [
     from ? `From: ${from}` : null,
     `To: ${to.join(', ')}`,
@@ -64,12 +70,7 @@ export async function buildMime({ from, to, cc = [], bcc = [], subject, text, at
     'Content-Transfer-Encoding: base64',
     '',
     wrap76(b64utf8(text)),
-    `--${boundary}`,
-    `Content-Type: application/pdf; name="${encHeader(attachment.name)}"`,
-    `Content-Disposition: attachment; filename="${encHeader(attachment.name)}"`,
-    'Content-Transfer-Encoding: base64',
-    '',
-    wrap76(b64(pdf)),
+    ...casti,
     `--${boundary}--`,
     '',
   ].filter((l) => l !== null);
@@ -81,7 +82,7 @@ export async function sendMail(email, msg) {
   if (isDemo()) {
     let box = [];
     try { box = JSON.parse(localStorage.getItem('artur-demo-outbox') || '[]'); } catch { /* prázdné */ }
-    box.push({ at: new Date().toISOString(), to: msg.to, subject: msg.subject, text: msg.text, attachment: msg.attachment.name, size: mime.length });
+    box.push({ at: new Date().toISOString(), to: msg.to, subject: msg.subject, text: msg.text, attachments: (msg.attachments || [msg.attachment]).map((a) => a.name), size: mime.length });
     localStorage.setItem('artur-demo-outbox', JSON.stringify(box));
     return { id: 'demo-' + box.length };
   }
@@ -96,16 +97,52 @@ export async function sendMail(email, msg) {
   return r.json();
 }
 
-export const VYCHOZI_PREDMET = 'Faktura {cislo} – {dodavatel}';
-export const VYCHOZI_TEXT = `Dobrý den,
+export const VYCHOZI_PREDMET = '{Faktura} {cislo} – {dodavatel}';
+export const VYCHOZI_TEXT = `{osloveni},
 
-v příloze zasíláme fakturu č. {cislo} na částku {castka} se splatností {splatnost}.
-Platbu prosím pošlete na účet {ucet}, variabilní symbol {vs}.
+v příloze zasíláme {fakturu}:
+{seznam_faktur}
+
+Platbu prosím pošlete na účet {ucet}.
 
 Děkujeme a přejeme hezký den.
-{dodavatel}`;
+{podpis}`;
 
-export function fillTemplate(tpl, f, s) {
-  const map = { cislo: f.cislo, castka: czk(f.celkem), splatnost: datum(f.datumSplatnosti), vystaveno: datum(f.datumVystaveni), ucet: f.ucet?.cislo || '', vs: f.vs, dodavatel: s.nazev, odberatel: f.odberatel?.nazev || '' };
-  return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m));
+const MESICE = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
+/** Fakturované období faktury (YYYY-MM): ze šablony, jinak předchozí měsíc před vystavením. */
+export function obdobiFaktury(f) {
+  if (f.obdobiYm) return f.obdobiYm;
+  const [y, m] = String(f.datumVystaveni || '').split('-').map(Number);
+  if (!y) return '';
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+/** „A“, „A a B“, „A, B a C“ */
+export const vyjmenuj = (l) => (l.length <= 1 ? (l[0] || '') : `${l.slice(0, -1).join(', ')} a ${l.at(-1)}`);
+
+/**
+ * Doplní proměnné do předmětu/textu e-mailu pro jednu nebo více faktur.
+ * extra: { osloveni, mista: ['Vajgar 571', …], podpis }
+ */
+export function fillTemplate(tpl, fa, s, extra = {}) {
+  const list = Array.isArray(fa) ? fa : [fa];
+  const f = list[0] || {};
+  const jedna = list.length === 1;
+  const celkem = list.reduce((a, x) => a + Number(x.celkem || 0), 0);
+  const ob = obdobiFaktury(f); const [oy, om] = ob ? ob.split('-').map(Number) : [];
+  const mista = (extra.mista || []).filter(Boolean);
+  const vice = mista.length > 1 || mista.some((m) => /,| a /.test(m));
+  const podpis = String(extra.podpis || '{dodavatel}').replace(/\{dodavatel\}/g, s.nazev || '');
+  const map = {
+    cislo: list.map((x) => x.cislo).join(', '), castka: czk(jedna ? f.celkem : celkem), celkem: czk(celkem), pocet: String(list.length),
+    splatnost: datum(f.datumSplatnosti), vystaveno: datum(f.datumVystaveni), ucet: f.ucet?.cislo || '', vs: list.map((x) => x.vs).join(', '),
+    dodavatel: s.nazev || '', odberatel: vyjmenuj([...new Set(list.map((x) => x.odberatel?.nazev || ''))]),
+    faktura: jedna ? 'faktura' : 'faktury', Faktura: jedna ? 'Faktura' : 'Faktury', fakturu: jedna ? 'fakturu' : 'faktury', Fakturu: jedna ? 'Fakturu' : 'Faktury',
+    mesic: om ? MESICE[om - 1] : '', rok: oy ? String(oy) : '',
+    osloveni: extra.osloveni || 'Dobrý den',
+    misto: vyjmenuj(mista), v_domech: mista.length ? `${vice ? 'v domech' : 'v domě'} ${vyjmenuj(mista)}` : '',
+    seznam_faktur: list.map((x) => `– ${x.cislo}, ${x.odberatel?.nazev || ''}, ${czk(x.celkem)}, VS ${x.vs}, splatnost ${datum(x.datumSplatnosti)}`).join('\n'),
+    podpis,
+  };
+  return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m)).replace(/[ \t]+([.,])/g, '$1').replace(/[ \t]{2,}/g, ' ');
 }
