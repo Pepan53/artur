@@ -184,3 +184,6 @@ option.shoda { font-weight: 600; }
 .mail-card details { margin-top: 6px; }
 .mail-card details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .mail-card textarea { width: 100%; font-family: inherit; }
+.mesic-nav { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.mesic-nav input { width: 11em; }
+.mesic-nav button { padding: 6px 10px; }

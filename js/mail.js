@@ -1,7 +1,7 @@
 // ARTUR – odeslání faktur e-mailem přes Gmail API (oprávnění gmail.send) z účtu přihlášeného uživatele.
 // V demo režimu se e-mail jen uloží do localStorage („artur-demo-outbox“).
-import { GOOGLE_CLIENT_ID, isDemo } from './config.js?v=0.6.2';
-import { czk, datum } from './invoices.js?v=0.6.2';
+import { GOOGLE_CLIENT_ID, isDemo } from './config.js?v=0.6.3';
+import { czk, datum } from './invoices.js?v=0.6.3';
 
 let gisLoading = null;
 let token = null; // { value, exp }

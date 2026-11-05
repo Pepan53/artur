@@ -3,6 +3,9 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.6.3 (2026-11-05)
+- Měsíční fakturace: šipky předchozí/následující měsíc jsou vlevo a vpravo od pole s měsícem.
+
 ## 0.6.2 (2026-11-05)
 - Uživatelé aplikace: u každého uživatele lze upravit jméno a poznámku (tlačítko Upravit), poznámku lze zadat i při povolení. E-mail se měnit nedá (je na něj vázané heslo a přístup k subjektům).
 

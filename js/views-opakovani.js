@@ -1,8 +1,8 @@
 // ARTUR – etapa 3: šablony opakovaných faktur, měsíční fakturace, odeslání e-mailem.
-import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.2';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.2';
-import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken, vyjmenuj } from './mail.js?v=0.6.2';
-import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.6.2';
+import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.3';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.3';
+import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken, vyjmenuj } from './mail.js?v=0.6.3';
+import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.6.3';
 
 export const MESICE = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 const MESICE_V = ['lednu', 'únoru', 'březnu', 'dubnu', 'květnu', 'červnu', 'červenci', 'srpnu', 'září', 'říjnu', 'listopadu', 'prosinci'];
@@ -369,7 +369,7 @@ export async function viewMesic(main, ctx) {
   const sum = (l) => czk(round2(l.reduce((x, f) => x + Number(f.celkem || 0), 0)));
   main.insertAdjacentHTML('beforeend', `
     <div class="head-row"><h1>Měsíční fakturace – ${esc(ctx.subjectName(s))}</h1>
-      <div class="row"><button id="prev" class="small">◀</button><input type="month" id="mesic" value="${mesic}"><button id="next" class="small">▶</button></div></div>
+      <div class="mesic-nav"><button id="prev" class="small" title="Předchozí měsíc" aria-label="Předchozí měsíc">◀</button><input type="month" id="mesic" value="${mesic}"><button id="next" class="small" title="Následující měsíc" aria-label="Následující měsíc">▶</button></div></div>
     <p class="muted">Postup: 1) vytvořte koncepty ze šablon, 2) zkontrolujte je a vystavte, 3) odešlete e-mailem. Nic se nevystaví ani neodešle bez vašeho potvrzení.</p>
     <section class="box"><h2>1. Šablony k fakturaci v ${esc(mesicNazev(mesic))} (${kVytvoreni.length})</h2>
       ${kVytvoreni.length ? `<table class="grid"><thead><tr><th><input type="checkbox" id="all1" checked></th><th>Odběratel</th><th>Položky</th><th class="num">Částka</th><th>Vystavení</th></tr></thead><tbody>
