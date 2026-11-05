@@ -1,6 +1,6 @@
 // ARTUR – výpis z účtu Raiffeisenbank v PDF → stejná struktura jako parseGpc (výpisy s pohyby).
 // Text se čte z PDF v prohlížeči (pdf.js), nic se nikam neposílá.
-import { round2 } from './invoices.js?v=0.6.0';
+import { round2 } from './invoices.js?v=0.6.1';
 
 const num = (s) => Number(String(s).replace(/\s| /g, '').replace(',', '.').replace(/CZK|EUR|USD/g, ''));
 const dmy = (s) => { const m = String(s).match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/); return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : ''; };

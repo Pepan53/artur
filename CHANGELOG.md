@@ -3,6 +3,9 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.6.1 (2026-11-05)
+- Splatnost do konce měsíce se nastavuje automaticky: návrh šablon ji převezme z poslední faktury zákazníka a u starších šablon nabídne Opakované faktury hromadnou opravu jedním tlačítkem. V seznamu šablon je vidět splatnost.
+
 ## 0.6.0 (2026-11-05)
 - Měsíční fakturace: e-maily se seskupují podle příjemců – faktury se stejnými adresami odejdou v jednom e-mailu se všemi PDF v příloze. Před odesláním je vidět, komu co půjde, text lze upravit a odeslat vybrané e-maily najednou.
 - ARTUR sám připraví koncepty ze šablon (od dne vystavení v měsíci) při prvním otevření po přihlášení, ve všech subjektech, kde uživatel smí fakturovat; nahoře ukáže lištu „ke kontrole / k odeslání“. Nic nevystaví ani neodešle bez potvrzení. Měsíc už vyfakturovaný jinak (např. ve vyfakturuj.cz) se nezdvojí.

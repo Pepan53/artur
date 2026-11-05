@@ -1,12 +1,12 @@
 // ARTUR – aplikace (etapa 0: přihlášení, role, šifrování, subjekty, klíče).
-import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.6.0';
-import { currentTheme, toggleTheme } from './theme.js?v=0.6.0';
-import * as C from './crypto.js?v=0.6.0';
-import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.6.0';
-import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport, today } from './views-fakturace.js?v=0.6.0';
-import { viewSablony, viewSablona, viewMesic, pripravitMesic, kSchvaleni, MESICE } from './views-opakovani.js?v=0.6.0';
-import { viewBanka } from './views-banka.js?v=0.6.0';
-import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.6.0';
+import { firebaseConfig, ADMIN_EMAILS, IDLE_LOCK_MINUTES, APP_VERSION, isDemo } from './config.js?v=0.6.1';
+import { currentTheme, toggleTheme } from './theme.js?v=0.6.1';
+import * as C from './crypto.js?v=0.6.1';
+import { aresLookup, parseAccount, ibanFromAccount, formatIban, icoValid } from './czech.js?v=0.6.1';
+import { viewFaktury, viewFaktura, viewAdresar, viewZakaznik, viewImport, today } from './views-fakturace.js?v=0.6.1';
+import { viewSablony, viewSablona, viewMesic, pripravitMesic, kSchvaleni, MESICE } from './views-opakovani.js?v=0.6.1';
+import { viewBanka } from './views-banka.js?v=0.6.1';
+import { VYCHOZI_PREDMET, VYCHOZI_TEXT } from './mail.js?v=0.6.1';
 
 const ROLE_LABEL = { vlastnik: 'Vlastník', ucetni: 'Účetní', ctenar: 'Čtenář' };
 const ROLES = ['vlastnik', 'ucetni', 'ctenar'];
@@ -62,11 +62,11 @@ export async function start() {
   document.getElementById('version').textContent = APP_VERSION;
   try {
     if (isDemo()) {
-      const { createDemoStore } = await import('./store-demo.js?v=0.6.0');
+      const { createDemoStore } = await import('./store-demo.js?v=0.6.1');
       state.store = createDemoStore();
       document.body.classList.add('demo');
     } else {
-      const { createFirebaseStore } = await import('./store-firebase.js?v=0.6.0');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=0.6.1');
       state.store = await createFirebaseStore(firebaseConfig);
     }
   } catch (e) {

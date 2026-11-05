@@ -1,8 +1,8 @@
 // ARTUR – etapa 1: adresář zákazníků a faktury.
-import * as C from './crypto.js?v=0.6.0';
-import { aresLookup, icoValid } from './czech.js?v=0.6.0';
-import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.0';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.0';
+import * as C from './crypto.js?v=0.6.1';
+import { aresLookup, icoValid } from './czech.js?v=0.6.1';
+import { TYPY, STAVY, soucet, radkaCelkem, uhrazeno, stavPodleUhrad, poSplatnosti, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.1';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.1';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
@@ -473,7 +473,7 @@ function detail(main, ctx, s, f) {
     await loadDocs(ctx, s, true); ctx.go('faktura', f.id);
   }));
   const mb = main.querySelector('#btn-mail');
-  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.6.0'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
+  if (mb) mb.onclick = async () => { const { odeslatDialog } = await import('./views-opakovani.js?v=0.6.1'); odeslatDialog(main.querySelector('#mail-box'), ctx, s, f); };
   const eb = main.querySelector('#btn-edit-prev');
   if (eb) eb.onclick = () => editPrevzata(main.querySelector('#edit-box'), ctx, s, f);
   const dup = main.querySelector('#btn-dup');

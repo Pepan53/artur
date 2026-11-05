@@ -29,3 +29,10 @@ const mime = await M.buildMime({ to: ['a@b.cz'], bcc: ['me@x.cz'], subject: 'Fak
 assert.ok(mime.includes('Subject: =?UTF-8?B?')); assert.ok(mime.includes('JVBERg==')); assert.ok(/^[\x00-\x7f]*$/.test(mime), 'MIME je čisté ASCII');
 assert.equal(M.fillTemplate('Faktura {cislo} na {castka} do {splatnost} {x}', { cislo: '20260214', celkem: 2400, datumSplatnosti: '2026-12-30' }, { nazev: 'POSTME' }), 'Faktura 20260214 na 2 400,00 Kč do 30.12.2026 {x}');
 console.log('OPAKOVÁNÍ: VŠECHNY TESTY OK');
+
+import { jeKonecMesice } from '../js/views-opakovani.js';
+assert.equal(jeKonecMesice({ datumVystaveni: '2026-11-01', datumSplatnosti: '2026-11-30' }), true);
+assert.equal(jeKonecMesice({ datumVystaveni: '2026-02-01', datumSplatnosti: '2026-02-28' }), true);
+assert.equal(jeKonecMesice({ datumVystaveni: '2026-11-01', datumSplatnosti: '2026-11-15' }), false);
+assert.equal(jeKonecMesice({ datumVystaveni: '2026-11-01', datumSplatnosti: '2026-12-01' }), false);
+console.log('jeKonecMesice OK');

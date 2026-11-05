@@ -1,8 +1,8 @@
 // ARTUR – etapa 3: šablony opakovaných faktur, měsíční fakturace, odeslání e-mailem.
-import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.0';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.0';
-import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken, vyjmenuj } from './mail.js?v=0.6.0';
-import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.6.0';
+import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.6.1';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.6.1';
+import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken, vyjmenuj } from './mail.js?v=0.6.1';
+import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.6.1';
 
 export const MESICE = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 const MESICE_V = ['lednu', 'únoru', 'březnu', 'dubnu', 'květnu', 'červnu', 'červenci', 'srpnu', 'září', 'říjnu', 'listopadu', 'prosinci'];
@@ -160,6 +160,22 @@ export function kSchvaleni(s, mesic) {
   return { mesic, koncepty, emaily: emailSkupiny(s, neodeslane).skupiny.length };
 }
 
+/** Má faktura splatnost na poslední den měsíce vystavení (tak to dělá vyfakturuj.cz)? */
+export function jeKonecMesice(f) {
+  const v = String(f.datumVystaveni || ''); const d = String(f.datumSplatnosti || '');
+  if (!v || !d || v.slice(0, 7) !== d.slice(0, 7) || v === d) return false;
+  const [y, m] = d.split('-').map(Number);
+  return Number(d.slice(8)) === new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+/** Šablony bez „do konce měsíce“, jejichž zákazník má poslední fakturu se splatností do konce měsíce. */
+export function sablonyKonecMesice(s) {
+  return s.sablony.filter((t) => !t.smazano && !t.splatnostKonec).filter((t) => {
+    const f = s.faktury.filter((x) => !x.smazano && x.zakaznikId === t.zakaznikId && x.stav !== 'koncept' && x.typ === 'faktura')
+      .sort((a, b) => (b.datumVystaveni || '').localeCompare(a.datumVystaveni || ''))[0];
+    return f && jeKonecMesice(f);
+  });
+}
+
 // ---------------------------------------------------------------- ŠABLONY
 export async function viewSablony(main, ctx) {
   const s = ctx.needSubject(main); if (!s) return;
@@ -173,12 +189,22 @@ export async function viewSablony(main, ctx) {
     <table class="grid"><thead><tr><th>Odběratel</th><th>Položky</th><th class="num">Částka</th><th>Opakování</th><th>Platnost</th><th>Stav</th></tr></thead><tbody>
     ${list.map((t) => `<tr class="click${t.aktivni ? '' : ' dim'}" data-id="${esc(t.id)}"><td>${esc(zakNazev(s, t))}</td>
       <td class="small">${esc(vyplnText((t.polozky || []).map((p) => p.popis).join(' · '), posunMesic(ym(new Date().getFullYear(), new Date().getMonth() + 1), t.obdobi === 'predchozi' ? -1 : 0)).slice(0, 110))}</td>
-      <td class="num">${czk(soucet(t.polozky))}</td><td>${PERIODA[t.perioda] || ''}, ${esc(t.den)}. den<br><span class="muted small">${OBDOBI[t.obdobi] || ''}</span></td>
+      <td class="num">${czk(soucet(t.polozky))}</td><td>${PERIODA[t.perioda] || ''}, ${esc(t.den)}. den<br><span class="muted small">${OBDOBI[t.obdobi] || ''} · splatnost ${t.splatnostKonec ? 'do konce měsíce' : (t.splatnostDni ?? s.data.splatnost ?? 14) + ' dní'}</span></td>
       <td>${t.platnostOd ? esc(t.platnostOd) : ''}${t.platnostDo ? ' – ' + esc(t.platnostDo) : ''}</td><td>${t.aktivni ? '<span class="pill ok">aktivní</span>' : '<span class="pill">pozastavená</span>'}</td></tr>`).join('') || '<tr><td colspan="6">Žádné šablony. Zkuste „Navrhnout z posledních faktur“.</td></tr>'}
     </tbody></table>
     <div id="navrh"></div>`);
   main.querySelectorAll('tr[data-id]').forEach((tr) => (tr.onclick = () => ctx.go('sablona', tr.dataset.id)));
   if (!rw) return;
+  const km = sablonyKonecMesice(s);
+  if (km.length) {
+    main.querySelector('table.grid').insertAdjacentHTML('beforebegin', `<p class="note row space"><span>U ${km.length} ${km.length === 1 ? 'šablony' : 'šablon'} měla poslední faktura splatnost do konce měsíce, šablona ale počítá splatnost ve dnech.</span><button class="small primary" id="btn-konec">Nastavit splatnost do konce měsíce</button></p>`);
+    main.querySelector('#btn-konec').onclick = async (e) => {
+      e.target.disabled = true; const now = new Date().toISOString(); const me = ctx.state.auth.email;
+      for (const t of km) { t.splatnostKonec = true; t.historie = [...(t.historie || []), { at: now, by: me, akce: 'splatnost nastavena do konce měsíce' }]; await saveDoc(ctx, s, 'sab', t); }
+      await ctx.audit(s.id, 'sablona.upravena', `${km.length} šablon: splatnost do konce měsíce`);
+      await loadDocs(ctx, s, true); ctx.flash(`Splatnost do konce měsíce nastavena u ${km.length} šablon.`); ctx.render();
+    };
+  }
   main.querySelector('#btn-new').onclick = () => ctx.go('sablona', 'nova');
   main.querySelector('#btn-navrh').onclick = () => navrh(main.querySelector('#navrh'), ctx, s);
 }
@@ -216,7 +242,7 @@ export function navrhySablon(s, dnes = today()) {
     const polozky = (f.polozky || []).map((p) => ({ popis: nahrad(p.popis), mnozstvi: p.mnozstvi, jednotka: p.jednotka || '', cena: p.cena, sleva: p.sleva || 0 }));
     out.push({
       zakaznikId: f.zakaznikId, typ: 'faktura', perioda: 'mesicne', den: Number(f.datumVystaveni.slice(8, 10)), obdobi: obdobi || 'predchozi',
-      splatnostDni: f.splatnostDni ?? null, uvod: f.uvod || '', poznamka: f.poznamka || '', polozky, ucetCislo: f.ucet?.cislo || '',
+      splatnostDni: f.splatnostDni ?? null, splatnostKonec: jeKonecMesice(f), uvod: f.uvod || '', poznamka: f.poznamka || '', polozky, ucetCislo: f.ucet?.cislo || '',
       platnostOd: posunMesic(mv, 1), platnostDo: '', aktivni: true, zdrojFaktura: f.cislo, _bezPromenne: !obdobi,
     });
   }

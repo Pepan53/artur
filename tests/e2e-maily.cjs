@@ -34,8 +34,18 @@ const fs = require('fs');
   await nav('Opakované faktury'); await page.click('#btn-navrh'); await page.waitForTimeout(400);
   await page.click('#btn-vytvor'); await page.waitForTimeout(1500);
   const sab = (await page.$$('tr[data-id]')).length; ok(sab >= 20, `vytvořeno ${sab} šablon`);
+  const konec = (await text()).match(/splatnost do konce měsíce/g) || [];
+  ok(konec.length === sab && !(await page.$('#btn-konec')), `návrh převzal splatnost do konce měsíce u všech ${konec.length} šablon`);
+  console.log('▶ Starší šablony bez „do konce měsíce“ → hromadná oprava');
+  for (const i of [0, 1, 2]) { await page.click(`tr[data-id] >> nth=${i}`); await page.waitForTimeout(300); await page.uncheck('[name=splatnostKonec]'); await page.click('#f-sab button.primary'); await page.waitForTimeout(500); }
+  ok((await page.textContent('#btn-konec')) && (await text()).includes('U 3 šablon měla poslední faktura splatnost do konce měsíce'), 'nabídka opravy u 3 šablon');
+  await page.click('#btn-konec'); await page.waitForSelector('text=Splatnost do konce měsíce nastavena u 3 šablon');
+  ok(((await text()).match(/splatnost do konce měsíce/g) || []).length === sab && !(await page.$('#btn-konec')), 'všechny šablony mají splatnost do konce měsíce');
   await nav('Měsíční fakturace'); await page.fill('#mesic', '2026-12'); await page.dispatchEvent('#mesic', 'change'); await page.waitForTimeout(500);
   await page.click('#btn-koncepty'); await page.waitForSelector('text=konceptů', { timeout: 60000 }); await page.waitForTimeout(400);
+  await page.click('[data-open] >> nth=0'); await page.waitForTimeout(400);
+  ok((await page.inputValue('[name=datumSplatnosti]')) === '2026-12-31', 'koncept za prosinec má splatnost 31.12.2026');
+  await page.goBack(); await page.waitForTimeout(500);
   await page.click('#btn-vystavit'); await page.waitForSelector('text=Vystaveno', { timeout: 120000 }); await page.waitForTimeout(600);
   t = await text();
   const karty = await page.$$eval('.mail-card', (l) => l.map((c) => ({ to: c.querySelector('.m-to').value, n: c.querySelectorAll('[data-open]').length, predmet: c.querySelector('.m-predmet').value, text: c.querySelector('.m-text').value })));
