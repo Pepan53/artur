@@ -3,6 +3,9 @@
 Číslování: HLAVNÍ.ETAPA.OPRAVA. Druhé číslo odpovídá etapě vývoje, třetí opravám a drobnostem v ní.
 Každá verze je na GitHubu označená tagem `vX.Y.Z` a její kopie je ve složce FAKTUR\ARTUR-verze.
 
+## 0.5.14 (2026-11-05)
+- Oprava textu potvrzení při vystavení faktury (i hromadném): vystavenou fakturu lze upravit, hláška už netvrdí opak.
+
 ## 0.5.13 (2026-11-04)
 - U úhrady má přednost měsíční výpis: když se platba spáruje z průběžného (denního) výpisu a později přijde měsíční výpis se stejnou platbou, údaj u pohybu i u úhrady faktury se přepíše na měsíční výpis a změna se zapíše do historie faktury. Průběžný výpis nahraný po měsíčním údaj nemění.
 

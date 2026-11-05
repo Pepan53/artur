@@ -1,8 +1,8 @@
 // ARTUR – etapa 3: šablony opakovaných faktur, měsíční fakturace, odeslání e-mailem.
-import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.13';
-import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.13';
-import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken } from './mail.js?v=0.5.13';
-import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.5.13';
+import { TYPY, soucet, radkaCelkem, dalsiCislo, vsZCisla, addDays, czk, datum, round2 } from './invoices.js?v=0.5.14';
+import { invoicePdfBlob, pdfFileName } from './pdf.js?v=0.5.14';
+import { sendMail, fillTemplate, VYCHOZI_PREDMET, VYCHOZI_TEXT, gmailToken } from './mail.js?v=0.5.14';
+import { esc, today, norm, loadDocs, saveDoc, canWrite, zakaznikText, snapshotOdberatele, polozkaRow, stavPill } from './views-fakturace.js?v=0.5.14';
 
 export const MESICE = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
 const MESICE_V = ['lednu', 'únoru', 'březnu', 'dubnu', 'květnu', 'červnu', 'červenci', 'srpnu', 'září', 'říjnu', 'listopadu', 'prosinci'];
@@ -303,7 +303,7 @@ export async function viewMesic(main, ctx) {
   if (b2) b2.onclick = async () => {
     const ids = checked('.c2'); if (!ids.length) return;
     const vybrane = koncepty.filter((f) => ids.includes(f.id));
-    if (!confirm(`Vystavit ${vybrane.length} faktur na celkem ${sum(vybrane)}?\nČísla se přidělí postupně, vystavené faktury už nepůjde upravit.`)) return;
+    if (!confirm(`Vystavit ${vybrane.length} faktur na celkem ${sum(vybrane)}?\nČísla se přidělí postupně. Upravit je půjde i po vystavení.`)) return;
     b2.disabled = true;
     await loadDocs(ctx, s, true);
     const cisla = [];
